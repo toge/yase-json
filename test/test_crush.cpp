@@ -23,6 +23,27 @@ TEST_CASE("crush matches official JSONCrush output", "[crush]") {
 
     REQUIRE(yase_json::crush(input) == expected);
   }
+
+  SECTION("Tie-breaking matches official JSONCrush order") {
+    auto const input = std::string{"ab:ab:ab:ab"};
+    auto const expected = std::string{"!!!ab!ab:\u0001!_"};
+
+    REQUIRE(yase_json::crush(input) == expected);
+  }
+
+  SECTION("Unicode exact output matches official JSONCrush") {
+    auto const input = std::string{R"({"emoji":"😀😀😀😀","word":"éééé"})"};
+    auto const expected = std::string{"('emoji!'****'~word!'--')*😀-éé\u0001-*_"};
+
+    REQUIRE(yase_json::crush(input) == expected);
+  }
+
+  SECTION("Surrogate-adjacent repeats match official JSONCrush") {
+    auto const input = std::string{R"({"mixed":"alpha😀alpha😀alpha"})"};
+    auto const expected = std::string{"('mixed!'**-')*-😀-alpha\u0001-*_"};
+
+    REQUIRE(yase_json::crush(input) == expected);
+  }
 }
 
 TEST_CASE("uncrush accepts official JSONCrush output", "[crush]") {
@@ -43,6 +64,20 @@ TEST_CASE("uncrush accepts official JSONCrush output", "[crush]") {
   SECTION("Nested JSON object and array") {
     auto const input = std::string{"('students![*ack-7),*ill-6)]~class!'math')*('name!'J-'~age!1\u0001-*_"};
     auto const expected = std::string{R"({"students":[{"name":"Jack","age":17},{"name":"Jill","age":16}],"class":"math"})"};
+
+    REQUIRE(yase_json::uncrush(input) == expected);
+  }
+
+  SECTION("Unicode exact output uncrushes correctly") {
+    auto const input = std::string{"('emoji!'****'~word!'--')*😀-éé\u0001-*_"};
+    auto const expected = std::string{R"({"emoji":"😀😀😀😀","word":"éééé"})"};
+
+    REQUIRE(yase_json::uncrush(input) == expected);
+  }
+
+  SECTION("Surrogate-adjacent official output uncrushes correctly") {
+    auto const input = std::string{"('mixed!'**-')*-😀-alpha\u0001-*_"};
+    auto const expected = std::string{R"({"mixed":"alpha😀alpha😀alpha"})"};
 
     REQUIRE(yase_json::uncrush(input) == expected);
   }

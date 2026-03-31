@@ -21,7 +21,11 @@ static constexpr auto decode_table = [] {
   return t;
 }();
 
-// 高速なBase62デコード
+/**
+ * @brief Base62 文字列を整数値へ復元します。
+ * @param s 復元対象の Base62 文字列。
+ * @return 復元された整数値。
+ */
 auto const from_base62 = [](std::string_view s) -> uint64_t {
   if (s.empty()) {
     return 0;
@@ -76,6 +80,12 @@ private:
   /// デコード中に参照する値プールのポインタ
   glz::generic::array_t const* pool_ptr = nullptr;
 
+  /**
+   * @brief プール中の参照文字列をたどって JSON ノードを復元します。
+   * @param idx_str プール要素を指す Base62 文字列。
+   * @return 復元した JSON ノード。
+   * @throw std::out_of_range 参照先インデックスがプール範囲外の場合。
+   */
   auto resolve(std::string_view idx_str) -> glz::generic {
     auto const idx = detail::from_base62(idx_str);
     if (idx >= pool_ptr->size()) {

@@ -16,7 +16,11 @@ namespace detail {
 
 auto const BASE62_CHARS = std::string_view{"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"};
 
-// 高速なBase62エンコード
+/**
+ * @brief 整数値を Base62 文字列へ変換します。
+ * @param val 変換対象の整数値。
+ * @return Base62 で表現した文字列。
+ */
 auto const to_base62 = [](uint64_t val) -> std::string {
   if (val == 0) {
     return "0";
@@ -75,6 +79,13 @@ private:
   glz::generic::array_t pool;
   /// 値（JSON文字列）からプール内のインデックスへの逆引きマップ
   std::unordered_map<std::string, std::string> lookup;
+
+  /**
+   * @brief JSON ノードを再帰的に処理し、プール上の参照文字列へ変換します。
+   * @param v 処理対象の JSON ノード。
+   * @return プール中の要素を指す Base62 文字列。
+   * @throw std::runtime_error ルックアップキーの生成に失敗した場合。
+   */
   auto process(glz::generic const& v) -> std::string {
     auto lookup_key = std::string{};
     if (auto const ec = glz::write_json(v, lookup_key)) {
