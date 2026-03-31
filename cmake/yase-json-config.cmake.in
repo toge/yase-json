@@ -1,0 +1,8 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(glaze REQUIRED CONFIG)
+
+include("${CMAKE_CURRENT_LIST_DIR}/yase-json-targets.cmake")
+
+check_required_components(yase-json)
