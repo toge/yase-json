@@ -15,8 +15,18 @@ auto constexpr JS_CRUSH_CHARS = std::string_view{
   R"(!"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~)"
 };
 
+/**
+ * @brief 文字列レベルでの圧縮を行うクラス。
+ *
+ * 頻出する部分文字列を未使用の文字に置き換えることで、文字列全体のサイズを削減します。
+ */
 class JSONCrush {
 public:
+  /**
+   * @brief JSON文字列を文字列レベルで圧縮します。
+   * @param input 圧縮対象のJSON文字列。
+   * @return 圧縮後の文字列。
+   */
   auto crush(std::string_view input) -> std::string {
     if (input.empty()) {
       return "";
@@ -31,7 +41,7 @@ public:
     {
       bool used[256] = {false};
       for (auto const c : crushed) {
-        used[c] = true;
+        used[static_cast<unsigned char>(c)] = true;
       }
       for (auto const c : JS_CRUSH_CHARS) {
         if (!used[static_cast<unsigned char>(c)]) {
@@ -103,6 +113,11 @@ public:
     return crushed;
   }
 
+  /**
+   * @brief crushで圧縮された文字列を元の形式に復元します。
+   * @param input 圧縮された文字列。
+   * @return 復元された元のJSON文字列。
+   */
   auto uncrush(std::string_view input) -> std::string {
     if (input.empty()) {
       return "";

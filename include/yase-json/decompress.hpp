@@ -4,8 +4,6 @@
 #include <stdexcept>
 #include <array>
 
-#include <immintrin.h>
-
 #include <glaze/glaze.hpp>
 
 namespace yase_json {
@@ -38,9 +36,23 @@ auto const from_base62 = [](std::string_view s) -> uint64_t {
 
 } // namespace detail
 
+/**
+ * @brief 構造的に圧縮されたJSONを元に戻す復元クラス。
+ */
 class Decompressor {
 public:
-  auto decompress(glz::generic const& compressed) -> glz::generic {
+  /**
+   * @brief 構造的に圧縮されたJSON文字列を元の形式に復元します。
+   * @param compressed_json_str 圧縮されたJSON文字列。
+   * @return 復元された元のJSON文字列。
+   * @throw std::runtime_error JSONのパース、構造の不正、または書き出しに失敗した場合。
+   */
+  auto decompress(std::string_view compressed_json_str) -> std::string {
+    glz::generic compressed;
+    if (auto const ec = glz::read_json(compressed, compressed_json_str)) {
+      throw std::runtime_error("Failed to parse compressed JSON: " + glz::format_error(ec, compressed_json_str));
+    }
+
     if (!compressed.is_array()) {
       throw std::runtime_error("Root must be array");
     }
@@ -51,10 +63,17 @@ public:
 
     pool_ptr = &arr[0].get<glz::generic::array_t>();
     auto const& root_idx = arr[1].get<std::string>();
-    return resolve(root_idx);
+    auto result = resolve(root_idx);
+
+    auto out = std::string{};
+    if (auto const ec = glz::write_json(result, out)) {
+      throw std::runtime_error("Failed to generate decompressed JSON");
+    }
+    return out;
   }
 
 private:
+  /// デコード中に参照する値プールのポインタ
   glz::generic::array_t const* pool_ptr = nullptr;
 
   auto resolve(std::string_view idx_str) -> glz::generic {

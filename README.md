@@ -47,22 +47,13 @@ cmake --build build
 int main() {
   std::string json_str = R"([{"name":"item","val":1},{"name":"item","val":1}])";
 
-  glz::generic original;
-  glz::read_json(original, json_str);
-
   yase_json::Compressor compressor;
-  auto compressed = compressor.compress(original);
-
-  std::string compressed_out;
-  glz::write_json(compressed, compressed_out);
-  std::cout << "Compressed: " << compressed_out << std::endl;
+  std::string compressed = compressor.compress(json_str);
+  std::cout << "Compressed: " << compressed << std::endl;
 
   yase_json::Decompressor decompressor;
-  auto decompressed = decompressor.decompress(compressed);
-
-  std::string decompressed_out;
-  glz::write_json(decompressed, decompressed_out);
-  std::cout << "Decompressed: " << decompressed_out << std::endl;
+  std::string decompressed = decompressor.decompress(compressed);
+  std::cout << "Decompressed: " << decompressed << std::endl;
 
   return 0;
 }
