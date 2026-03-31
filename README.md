@@ -6,7 +6,7 @@
 ## 特徴
 
 - **構造的圧縮 (Compressor/Decompressor)**:
-  - 重複する値をプールし、Base62 エンコードされたインデックスで参照することで、JSONの構造的な冗長性を削減します。
+  - 重複する値をプールし、Base62エンコードされたインデックスで参照することで、JSONの構造的な冗長性を削減します。
   - 配列内の重複オブジェクトなどが非常に多いデータセットで高い圧縮率を発揮します。
 - **文字列圧縮 (JSONCrush)**:
   - [JSONCrush](https://github.com/KilledByAPixel/JSONCrush)にインスパイアされたアルゴリズムで、頻出する部分文字列を未使用の文字に置き換えることで、文字列全体のサイズを削減します。
@@ -61,7 +61,10 @@ int main() {
 
 ### JSONCrush (文字列レベルの圧縮)
 
-文字列として JSON をさらに圧縮したい場合に有効です。
+文字列としてJSONをさらに圧縮したい場合に有効です。
+
+**Caution: 現時点ではJSONCrushとの互換性がありません。**
+将来的にJSONCrushの結果との互換性を目指す予定です。
 
 ```cpp
 #include <iostream>
@@ -70,11 +73,10 @@ int main() {
 int main() {
   std::string input = R"({"a":"value", "b":"value", "c":"value"})";
 
-  yase_json::JSONCrush crusher;
-  auto const crushed = crusher.crush(input);
+  auto const crushed = yase_json::crush(input);
   std::cout << "Crushed: " << crushed << std::endl;
 
-  auto const uncrushed = crusher.uncrush(crushed);
+  auto const uncrushed = yase_json::uncrush(crushed);
   std::cout << "Uncrushed: " << uncrushed << std::endl;
 
   return 0;

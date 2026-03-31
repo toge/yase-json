@@ -56,6 +56,10 @@ target_include_directories(yase-json INTERFACE
 
 target_link_libraries(yase-json INTERFACE glaze::glaze)
 
+add_executable(example example.cpp)
+target_link_libraries(example PRIVATE yase-json::yase-json)
+target_compile_features(example PRIVATE ${STD_CPP})
+
 # --- Installer ---
 include(GNUInstallDirs)
 

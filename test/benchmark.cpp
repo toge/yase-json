@@ -21,7 +21,6 @@ int main() {
 
   yase_json::Compressor compressor;
   yase_json::Decompressor decompressor;
-  yase_json::JSONCrush crusher;
 
   try {
     auto start = std::chrono::high_resolution_clock::now();
@@ -31,11 +30,11 @@ int main() {
     auto checkpoint1 = std::chrono::high_resolution_clock::now();
 
     // 2. JSONCrush (String level)
-    auto crushed = crusher.crush(compressed_str);
+    auto crushed = yase_json::crush(compressed_str);
     auto checkpoint2 = std::chrono::high_resolution_clock::now();
 
     // 3. JSONUncrush
-    auto uncrushed = crusher.uncrush(crushed);
+    auto uncrushed = yase_json::uncrush(crushed);
     auto checkpoint3 = std::chrono::high_resolution_clock::now();
 
     // 4. Decompression (Structural)
