@@ -49,11 +49,11 @@ int main() {
 
   yase_json::Compressor compressor;
   std::string compressed = compressor.compress(json_str);
-  std::cout << "Compressed: " << compressed << std::endl;
+  std::cout << "Compressed: " << compressed << '\n';
 
   yase_json::Decompressor decompressor;
   std::string decompressed = decompressor.decompress(compressed);
-  std::cout << "Decompressed: " << decompressed << std::endl;
+  std::cout << "Decompressed: " << decompressed << '\n';
 
   return 0;
 }
@@ -63,8 +63,12 @@ int main() {
 
 文字列としてJSONをさらに圧縮したい場合に有効です。
 
-**Caution: 現時点ではJSONCrushとの互換性がありません。**
-将来的にJSONCrushの結果との互換性を目指す予定です。
+`yase_json::crush` / `yase_json::uncrush` は
+[KilledByAPixel/JSONCrush](https://github.com/KilledByAPixel/JSONCrush)
+の `JSONCrush.crush()` / `JSONCrush.uncrush()` が返す**生の文字列**と互換です。
+
+URLクエリなどで利用する場合は、JavaScript版と同様に圧縮後の文字列を別途
+`encodeURIComponent` 相当でエンコードしてください。
 
 ```cpp
 #include <iostream>
@@ -74,10 +78,10 @@ int main() {
   std::string input = R"({"a":"value", "b":"value", "c":"value"})";
 
   auto const crushed = yase_json::crush(input);
-  std::cout << "Crushed: " << crushed << std::endl;
+  std::cout << "Crushed: " << crushed << '\n';
 
   auto const uncrushed = yase_json::uncrush(crushed);
-  std::cout << "Uncrushed: " << uncrushed << std::endl;
+  std::cout << "Uncrushed: " << uncrushed << '\n';
 
   return 0;
 }
