@@ -1,6 +1,7 @@
 build
 build_static
 save-commands.json
+.worktrees
 
 # Prerequisites
 *.d
