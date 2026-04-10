@@ -44,6 +44,13 @@ TEST_CASE("crush matches official JSONCrush output", "[crush]") {
 
     REQUIRE(yase_json::crush(input) == expected);
   }
+
+  SECTION("Nested repeated numeric sequences match official JSONCrush") {
+    auto const input = std::string{R"({"nested":{"arr":[1,2,3,1,2,3],"obj":{"a":1,"b":1}}})"};
+    auto const expected = std::string{"('nested!('arr![*,*]~obj!('a!1~b!1)))*1,2,3\u0001*_"};
+
+    REQUIRE(yase_json::crush(input) == expected);
+  }
 }
 
 TEST_CASE("uncrush accepts official JSONCrush output", "[crush]") {
@@ -78,6 +85,13 @@ TEST_CASE("uncrush accepts official JSONCrush output", "[crush]") {
   SECTION("Surrogate-adjacent official output uncrushes correctly") {
     auto const input = std::string{"('mixed!'**-')*-😀-alpha\u0001-*_"};
     auto const expected = std::string{R"({"mixed":"alpha😀alpha😀alpha"})"};
+
+    REQUIRE(yase_json::uncrush(input) == expected);
+  }
+
+  SECTION("Nested repeated numeric official output uncrushes correctly") {
+    auto const input = std::string{"('nested!('arr![*,*]~obj!('a!1~b!1)))*1,2,3\u0001*_"};
+    auto const expected = std::string{R"({"nested":{"arr":[1,2,3,1,2,3],"obj":{"a":1,"b":1}}})"};
 
     REQUIRE(yase_json::uncrush(input) == expected);
   }

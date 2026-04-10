@@ -11,9 +11,9 @@
 
 int main() {
   std::string json_str = R"([)";
-  for (int i = 0; i < 500; ++i) {
+  for (int i = 0; i < 5000; ++i) {
     json_str += R"({"id":)" + std::to_string(i) + R"(, "type": "user_event", "data": {"action": "click", "timestamp": "2026-03-31T12:00:00Z", "meta": {"browser": "Chrome", "os": "Linux"}}})";
-    if (i < 499) {
+    if (i < 4999) {
       json_str += ",";
     }
   }

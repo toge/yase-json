@@ -6,7 +6,8 @@
 ## 特徴
 
 - **構造的圧縮 (Compressor/Decompressor)**:
-  - 重複する値をプールし、Base62エンコードされたインデックスで参照することで、JSONの構造的な冗長性を削減します。
+  - [`beenotung/compress-json`](https://github.com/beenotung/compress-json) と互換な values/root 形式で JSON を圧縮します。
+  - object / array / string / number / boolean / null の符号化規則は compress-json に合わせています。
   - 配列内の重複オブジェクトなどが非常に多いデータセットで高い圧縮率を発揮します。
 - **文字列圧縮 (JSONCrush)**:
   - [JSONCrush](https://github.com/KilledByAPixel/JSONCrush)にインスパイアされたアルゴリズムで、頻出する部分文字列を未使用の文字に置き換えることで、文字列全体のサイズを削減します。
@@ -36,6 +37,7 @@ cmake --build build
 ### 構造的圧縮
 
 `yase_json::Compressor` を使用してJSONデータを圧縮、`yase_json::Decompressor` で元に戻すことができます。
+圧縮結果は `compress-json` の出力形式と互換です。
 
 ```cpp
 #include <iostream>
