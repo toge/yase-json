@@ -31,6 +31,11 @@ struct OrderedCandidate {
   int64_t encoded_length = 0;
 };
 
+struct SubstringMatches {
+  size_t first_pos = 0;
+  int64_t count = 0;
+};
+
 auto constexpr is_high_surrogate = [](char16_t const value) {
   return value >= 0xD800 && value <= 0xDBFF;
 };
@@ -284,9 +289,65 @@ auto const count_non_overlapping_substrings = [](std::u16string_view const strin
   return count;
 };
 
+auto const find_non_overlapping_substrings = [](std::u16string_view const string,
+                                                std::u16string_view const substring) {
+  auto matches = SubstringMatches{};
+  if (substring.empty()) {
+    return matches;
+  }
+
+  for (auto pos = string.find(substring, 0);
+       pos != std::u16string_view::npos;
+       pos = string.find(substring, pos + substring.size())) {
+    if (matches.count == 0) {
+      matches.first_pos = pos;
+    }
+    ++matches.count;
+  }
+  return matches;
+};
+
+auto const collect_non_overlapping_match_positions = [](
+  std::u16string_view const input,
+  std::u16string_view const target,
+  std::vector<size_t>& positions) {
+  positions.clear();
+  if (target.empty()) {
+    return;
+  }
+
+  for (auto pos = input.find(target, 0);
+       pos != std::u16string_view::npos;
+       pos = input.find(target, pos + target.size())) {
+    positions.push_back(pos);
+  }
+};
+
+auto const write_replaced_with_char = [](
+  std::u16string_view const input,
+  std::u16string_view const target,
+  char16_t const replacement,
+  std::vector<size_t> const& positions,
+  std::u16string& output) {
+  output.clear();
+  if (positions.empty()) {
+    output.assign(input);
+    return;
+  }
+
+  output.reserve(input.size() - positions.size() * (target.size() - 1));
+  auto last = size_t{0};
+  for (auto const pos : positions) {
+    output.append(input.substr(last, pos - last));
+    output.push_back(replacement);
+    last = pos + target.size();
+  }
+  output.append(input.substr(last));
+};
+
 auto const build_initial_candidates = [](std::u16string_view const string, int64_t const max_len) {
   auto candidates = std::vector<OrderedCandidate<char16_t>>{};
-  auto seen = std::unordered_map<std::u16string, size_t>{};
+  auto seen = std::unordered_map<std::u16string_view, size_t>{};
 
   if (string.size() < 2 || max_len <= 2) {
     return candidates;
@@ -296,7 +357,7 @@ auto const build_initial_candidates = [](std::u16string_view const string, int64
   for (auto const substring_length : std::views::iota(size_t{2}, upper_length)) {
     auto const start_limit = string.size() - substring_length;
     for (auto const i : std::views::iota(size_t{0}, start_limit)) {
-      auto substring = std::u16string{string.substr(i, substring_length)};
+      auto const substring = string.substr(i, substring_length);
       if (seen.contains(substring) || has_unmatched_surrogate(substring)) {
         continue;
       }
@@ -306,9 +367,9 @@ auto const build_initial_candidates = [](std::u16string_view const string, int64
       seen.emplace(substring, candidates.size());
 
       if (count > 1) {
-        auto const encoded_length = encoded_uri_length(std::u16string_view{substring});
+        auto const encoded_length = encoded_uri_length(substring);
         candidates.push_back({
-          std::move(substring),
+          std::u16string{substring},
           count,
           encoded_length
         });
@@ -324,25 +385,34 @@ auto const rebuild_candidates = [](std::u16string_view const string,
                                    std::u16string_view const replaced,
                                    char16_t const replacement) {
   auto candidates = std::vector<OrderedCandidate<char16_t>>{};
-  auto seen = std::unordered_map<std::u16string, size_t>{};
+  auto seen = std::unordered_map<std::u16string_view, size_t>{};
+  auto rewritten = std::u16string{};
+  auto positions = std::vector<size_t>{};
 
   for (auto const& candidate : previous) {
-    auto rewritten = replace_all_with_char<char16_t>(candidate.value, replaced, replacement);
-    auto const count = count_non_overlapping_substrings(string, rewritten, 0, 0);
-    if (count <= 1) {
+    auto rewritten_view = std::u16string_view{candidate.value};
+    collect_non_overlapping_match_positions(candidate.value, replaced, positions);
+    if (!positions.empty()) {
+      write_replaced_with_char(candidate.value, replaced, replacement, positions, rewritten);
+      rewritten_view = rewritten;
+    }
+
+    auto const matches = find_non_overlapping_substrings(string, rewritten_view);
+    if (matches.count <= 1) {
       continue;
     }
 
-    if (auto const it = seen.find(rewritten); it != seen.end()) {
-      candidates[it->second].count = count;
+    auto const accepted = string.substr(matches.first_pos, rewritten_view.size());
+    if (auto const it = seen.find(accepted); it != seen.end()) {
+      candidates[it->second].count = matches.count;
       continue;
     }
 
-    seen.emplace(rewritten, candidates.size());
-    auto const encoded_length = encoded_uri_length(std::u16string_view{rewritten});
+    seen.emplace(accepted, candidates.size());
+    auto const encoded_length = encoded_uri_length(accepted);
     candidates.push_back({
-      std::move(rewritten),
-      count,
+      std::u16string{accepted},
+      matches.count,
       encoded_length
     });
   }
@@ -354,6 +424,8 @@ auto const js_crush_utf16 = [](std::u16string string, int64_t const max_len = 50
   std::u16string split_string;
   auto candidates = build_initial_candidates(string, max_len);
   auto replace_pos = static_cast<int64_t>(replacement_characters_utf16.size());
+  auto replacement_positions = std::vector<size_t>{};
+  auto rewritten_string = std::u16string{};
 
   while (true) {
     char16_t replace_char = 0;
@@ -399,7 +471,9 @@ auto const js_crush_utf16 = [](std::u16string string, int64_t const max_len = 50
     }
 
     auto const& best_sub = filtered[best_index].value;
-    string = replace_all_with_char<char16_t>(string, best_sub, replace_char);
+    collect_non_overlapping_match_positions(string, best_sub, replacement_positions);
+    write_replaced_with_char(string, best_sub, replace_char, replacement_positions, rewritten_string);
+    string.swap(rewritten_string);
     string.push_back(replace_char);
     string.append(best_sub);
     split_string.insert(split_string.begin(), replace_char);

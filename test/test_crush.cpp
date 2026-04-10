@@ -107,6 +107,15 @@ TEST_CASE("crush output ordering regression", "[crush]") {
   }
 }
 
+TEST_CASE("crush candidate rebuild regression", "[crush]") {
+  SECTION("Candidate rebuild path preserves exact current output") {
+    auto const input = std::string{R"({"nested":{"x":"abababab","y":"abababab"}})"};
+    auto const expected = std::string{"('nested!('x*~y*))*!'----'-ab\u0001-*_"};
+
+    REQUIRE(yase_json::crush(input) == expected);
+  }
+}
+
 TEST_CASE("crush and uncrush remain symmetric", "[crush]") {
   SECTION("Long repetitive string") {
     auto input = std::string{};
