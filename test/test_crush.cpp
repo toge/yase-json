@@ -97,6 +97,16 @@ TEST_CASE("uncrush accepts official JSONCrush output", "[crush]") {
   }
 }
 
+TEST_CASE("crush output ordering regression", "[crush]") {
+  SECTION("Repeated replacement candidate keeps official output ordering") {
+    auto const input = std::string{R"({"k1":"abcabcabc","k2":"abcabcabc"})"};
+    auto const expected = std::string{"('k1*~k2*)*!'---'-abc\u0001-*_"};
+
+    REQUIRE(yase_json::crush(input) == expected);
+    REQUIRE(yase_json::crush(input) == yase_json::crush(input));
+  }
+}
+
 TEST_CASE("crush and uncrush remain symmetric", "[crush]") {
   SECTION("Long repetitive string") {
     auto input = std::string{};

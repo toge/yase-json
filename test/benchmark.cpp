@@ -23,38 +23,39 @@ int main() {
   yase_json::Decompressor decompressor;
 
   try {
-    auto start = std::chrono::high_resolution_clock::now();
+    using clock_type = std::chrono::steady_clock;
+    auto const start = clock_type::now();
 
     // 1. Compression (Structural)
     auto compressed_str = compressor.compress(json_str);
-    auto checkpoint1 = std::chrono::high_resolution_clock::now();
+    auto const checkpoint1 = clock_type::now();
 
     // 2. JSONCrush (String level)
     auto crushed = yase_json::crush(compressed_str);
-    auto checkpoint2 = std::chrono::high_resolution_clock::now();
+    auto const checkpoint2 = clock_type::now();
 
     // 3. JSONUncrush
     auto uncrushed = yase_json::uncrush(crushed);
-    auto checkpoint3 = std::chrono::high_resolution_clock::now();
+    auto const checkpoint3 = clock_type::now();
 
     // 4. Decompression (Structural)
     auto decompressed = decompressor.decompress(uncrushed);
-    auto checkpoint4 = std::chrono::high_resolution_clock::now();
+    auto const checkpoint4 = clock_type::now();
 
-    auto d1 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint1 - start).count();
-    auto d2 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint2 - checkpoint1).count();
-    auto d3 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint3 - checkpoint2).count();
-    auto d4 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint4 - checkpoint3).count();
+    auto const d1 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint1 - start).count();
+    auto const d2 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint2 - checkpoint1).count();
+    auto const d3 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint3 - checkpoint2).count();
+    auto const d4 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint4 - checkpoint3).count();
 
-    std::cout << "--- Final Optimized Benchmark Results ---\n";
-    std::cout << "Original Size:   " << json_str.size() << " bytes\n";
-    std::cout << "Compressed Size: " << compressed_str.size() << " bytes\n";
-    std::cout << "Crushed Size:    " << crushed.size() << " bytes\n";
-    std::cout << "Compression:     " << d1 << " ms\n";
-    std::cout << "JSONCrush:       " << d2 << " ms\n";
-    std::cout << "JSONUncrush:     " << d3 << " ms\n";
-    std::cout << "Decompression:   " << d4 << " ms\n";
-    std::cout << "Total Time:      " << (d1 + d2 + d3 + d4) << " ms\n";
+    std::cout << "--- Benchmark Results ---\n";
+    std::cout << "OriginalBytes=" << json_str.size() << '\n';
+    std::cout << "CompressedBytes=" << compressed_str.size() << '\n';
+    std::cout << "CrushedBytes=" << crushed.size() << '\n';
+    std::cout << "CompressionMs=" << d1 << '\n';
+    std::cout << "JSONCrushMs=" << d2 << '\n';
+    std::cout << "JSONUncrushMs=" << d3 << '\n';
+    std::cout << "DecompressionMs=" << d4 << '\n';
+    std::cout << "TotalMs=" << (d1 + d2 + d3 + d4) << '\n';
 
     // Verify correctness
     if (uncrushed != compressed_str) {
