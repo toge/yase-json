@@ -1,6 +1,5 @@
 #include <iostream>
 #include <chrono>
-#include <vector>
 #include <string>
 
 #include <glaze/glaze.hpp>
@@ -62,23 +61,23 @@ int main() {
       std::cerr << "Verification failed: uncrushed != compressed_str\n";
       return 1;
     }
-// Deep check (optional but recommended in benchmark)
-glz::generic original_parsed, decompressed_parsed;
-if (auto const ec = glz::read_json(original_parsed, json_str)) {
-  throw std::runtime_error("Failed to read original JSON in verification: " + glz::format_error(ec, json_str));
-}
-if (auto const ec = glz::read_json(decompressed_parsed, decompressed)) {
-  throw std::runtime_error("Failed to read decompressed JSON in verification: " + glz::format_error(ec, decompressed));
-}
-std::string s1, s2;
-if (auto const ec = glz::write_json(original_parsed, s1)) {
-  throw std::runtime_error("Failed to write original JSON in verification");
-}
-if (auto const ec = glz::write_json(decompressed_parsed, s2)) {
-  throw std::runtime_error("Failed to write decompressed JSON in verification");
-}
+    // Deep check (optional but recommended in benchmark)
+    glz::generic original_parsed, decompressed_parsed;
+    if (auto const ec = glz::read_json(original_parsed, json_str)) {
+      throw std::runtime_error("Failed to read original JSON in verification: " + glz::format_error(ec, json_str));
+    }
+    if (auto const ec = glz::read_json(decompressed_parsed, decompressed)) {
+      throw std::runtime_error("Failed to read decompressed JSON in verification: " + glz::format_error(ec, decompressed));
+    }
+    std::string s1, s2;
+    if (auto const ec = glz::write_json(original_parsed, s1)) {
+      throw std::runtime_error("Failed to write original JSON in verification");
+    }
+    if (auto const ec = glz::write_json(decompressed_parsed, s2)) {
+      throw std::runtime_error("Failed to write decompressed JSON in verification");
+    }
 
-if (s1 != s2) {
+    if (s1 != s2) {
       std::cerr << "Verification failed: original != decompressed\n";
       return 1;
     }
