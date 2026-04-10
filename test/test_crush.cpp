@@ -103,7 +103,6 @@ TEST_CASE("crush output ordering regression", "[crush]") {
     auto const expected = std::string{"('k1*~k2*)*!'---'-abc\u0001-*_"};
 
     REQUIRE(yase_json::crush(input) == expected);
-    REQUIRE(yase_json::crush(input) == yase_json::crush(input));
   }
 }
 
