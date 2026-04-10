@@ -46,7 +46,7 @@ int main() {
     auto const d2_us = std::chrono::duration<double, std::micro>(checkpoint2 - checkpoint1).count();
     auto const d3_us = std::chrono::duration<double, std::micro>(checkpoint3 - checkpoint2).count();
     auto const d4_us = std::chrono::duration<double, std::micro>(checkpoint4 - checkpoint3).count();
-    auto const total_us = d1_us + d2_us + d3_us + d4_us;
+    auto const total_us = std::chrono::duration<double, std::micro>(checkpoint4 - start).count();
     auto const d1_ms = d1_us / 1000.0;
     auto const d2_ms = d2_us / 1000.0;
     auto const d3_ms = d3_us / 1000.0;
