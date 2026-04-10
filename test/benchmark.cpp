@@ -1,5 +1,6 @@
 #include <iostream>
 #include <chrono>
+#include <iomanip>
 #include <string>
 
 #include <glaze/glaze.hpp>
@@ -41,20 +42,32 @@ int main() {
     auto decompressed = decompressor.decompress(uncrushed);
     auto const checkpoint4 = clock_type::now();
 
-    auto const d1 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint1 - start).count();
-    auto const d2 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint2 - checkpoint1).count();
-    auto const d3 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint3 - checkpoint2).count();
-    auto const d4 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint4 - checkpoint3).count();
+    auto const d1_us = std::chrono::duration<double, std::micro>(checkpoint1 - start).count();
+    auto const d2_us = std::chrono::duration<double, std::micro>(checkpoint2 - checkpoint1).count();
+    auto const d3_us = std::chrono::duration<double, std::micro>(checkpoint3 - checkpoint2).count();
+    auto const d4_us = std::chrono::duration<double, std::micro>(checkpoint4 - checkpoint3).count();
+    auto const total_us = d1_us + d2_us + d3_us + d4_us;
+    auto const d1_ms = d1_us / 1000.0;
+    auto const d2_ms = d2_us / 1000.0;
+    auto const d3_ms = d3_us / 1000.0;
+    auto const d4_ms = d4_us / 1000.0;
+    auto const total_ms = total_us / 1000.0;
 
     std::cout << "--- Benchmark Results ---\n";
+    std::cout << std::fixed << std::setprecision(3);
     std::cout << "OriginalBytes=" << json_str.size() << '\n';
     std::cout << "CompressedBytes=" << compressed_str.size() << '\n';
     std::cout << "CrushedBytes=" << crushed.size() << '\n';
-    std::cout << "CompressionMs=" << d1 << '\n';
-    std::cout << "JSONCrushMs=" << d2 << '\n';
-    std::cout << "JSONUncrushMs=" << d3 << '\n';
-    std::cout << "DecompressionMs=" << d4 << '\n';
-    std::cout << "TotalMs=" << (d1 + d2 + d3 + d4) << '\n';
+    std::cout << "CompressionUs=" << d1_us << '\n';
+    std::cout << "CompressionMs=" << d1_ms << '\n';
+    std::cout << "JSONCrushUs=" << d2_us << '\n';
+    std::cout << "JSONCrushMs=" << d2_ms << '\n';
+    std::cout << "JSONUncrushUs=" << d3_us << '\n';
+    std::cout << "JSONUncrushMs=" << d3_ms << '\n';
+    std::cout << "DecompressionUs=" << d4_us << '\n';
+    std::cout << "DecompressionMs=" << d4_ms << '\n';
+    std::cout << "TotalUs=" << total_us << '\n';
+    std::cout << "TotalMs=" << total_ms << '\n';
 
     // Verify correctness
     if (uncrushed != compressed_str) {
