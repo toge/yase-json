@@ -88,3 +88,41 @@ TEST_CASE("Compressor and Decompressor symmetry", "[compression]") {
     REQUIRE(original_out == decompressed_out);
   }
 }
+
+TEST_CASE("Compressor matches compress-json format", "[compression][compatibility]") {
+  yase_json::Compressor compressor;
+  yase_json::Decompressor decompressor;
+
+  auto constexpr sample_json = R"({
+  "key_0": 83.65503238356673,
+  "key_1": 89.95409841521338,
+  "key_2": 47.44338696958149,
+  "key_3": 94.43725005738578,
+  "key_4": 0.36392421970924826,
+  "key_5": 68.47659554361542,
+  "key_6": 14.436310626403683,
+  "key_7": 31.42182555594355,
+  "key_8": 40.578482117782904,
+  "key_9": 4.781149012078
+})";
+
+  auto constexpr expected_compressed = R"([["key_0","key_1","key_2","key_3","key_4","key_5","key_6","key_7","key_8","key_9","a|0|1|2|3|4|5|6|7|8|9","n|1L.Ah7S1YY0","n|1R.NelL46Sh","n|l.QkCCYIhk","n|1W.OrxaDYwo","n|0.:4doudMnW31","n|16.6xcghesU","n|E.1lh6nCSTS","n|V.FiSW6K6e","n|e.1sDjrK3D9","n|4.FJsCQPj","o|A|B|C|D|E|F|G|H|I|J|K"],"L"])";
+
+  SECTION("compress uses the same encoded payload as compress-json") {
+    REQUIRE(compressor.compress(sample_json) == expected_compressed);
+  }
+
+  SECTION("decompress accepts compress-json encoded payloads") {
+    auto const decompressed = decompressor.decompress(expected_compressed);
+
+    glz::generic original_parsed, decompressed_parsed;
+    REQUIRE(glz::read_json(original_parsed, sample_json) == 0);
+    REQUIRE(glz::read_json(decompressed_parsed, decompressed) == 0);
+
+    auto original_out = std::string{};
+    auto decompressed_out = std::string{};
+    REQUIRE(glz::write_json(original_parsed, original_out) == 0);
+    REQUIRE(glz::write_json(decompressed_parsed, decompressed_out) == 0);
+    REQUIRE(original_out == decompressed_out);
+  }
+}

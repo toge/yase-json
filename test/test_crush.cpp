@@ -44,6 +44,13 @@ TEST_CASE("crush matches official JSONCrush output", "[crush]") {
 
     REQUIRE(yase_json::crush(input) == expected);
   }
+
+  SECTION("Nested repeated numeric sequences match official JSONCrush") {
+    auto const input = std::string{R"({"nested":{"arr":[1,2,3,1,2,3],"obj":{"a":1,"b":1}}})"};
+    auto const expected = std::string{"('nested!('arr![*,*]~obj!('a!1~b!1)))*1,2,3\u0001*_"};
+
+    REQUIRE(yase_json::crush(input) == expected);
+  }
 }
 
 TEST_CASE("uncrush accepts official JSONCrush output", "[crush]") {
@@ -80,6 +87,32 @@ TEST_CASE("uncrush accepts official JSONCrush output", "[crush]") {
     auto const expected = std::string{R"({"mixed":"alpha😀alpha😀alpha"})"};
 
     REQUIRE(yase_json::uncrush(input) == expected);
+  }
+
+  SECTION("Nested repeated numeric official output uncrushes correctly") {
+    auto const input = std::string{"('nested!('arr![*,*]~obj!('a!1~b!1)))*1,2,3\u0001*_"};
+    auto const expected = std::string{R"({"nested":{"arr":[1,2,3,1,2,3],"obj":{"a":1,"b":1}}})"};
+
+    REQUIRE(yase_json::uncrush(input) == expected);
+  }
+}
+
+TEST_CASE("crush output ordering regression", "[crush]") {
+  SECTION("Repeated replacement candidate keeps official output ordering") {
+    auto const input = std::string{R"({"k1":"abcabcabc","k2":"abcabcabc"})"};
+    // From the upstream JSONCrush output for this ordering case.
+    auto const expected = std::string{"('k1*~k2*)*!'---'-abc\u0001-*_"};
+
+    REQUIRE(yase_json::crush(input) == expected);
+  }
+}
+
+TEST_CASE("crush candidate rebuild regression", "[crush]") {
+  SECTION("Candidate rebuild path preserves exact current output") {
+    auto const input = std::string{R"({"nested":{"x":"abababab","y":"abababab"}})"};
+    auto const expected = std::string{"('nested!('x*~y*))*!'----'-ab\u0001-*_"};
+
+    REQUIRE(yase_json::crush(input) == expected);
   }
 }
 
