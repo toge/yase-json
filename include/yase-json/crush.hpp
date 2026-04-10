@@ -195,36 +195,6 @@ auto join_strings(std::vector<std::basic_string<CharT>> const& parts,
 }
 
 template <typename CharT>
-auto replace_all(std::basic_string_view<CharT> const input,
-                 std::basic_string_view<CharT> const target,
-                 std::basic_string_view<CharT> const replacement)
-  -> std::basic_string<CharT> {
-  if (target.empty()) return std::basic_string<CharT>{input};
-  std::basic_string<CharT> output;
-  output.reserve(input.size());
-  size_t pos = 0;
-  while (true) {
-    auto const found = input.find(target, pos);
-    if (found == std::basic_string_view<CharT>::npos) {
-      output.append(input.substr(pos));
-      break;
-    }
-    output.append(input.substr(pos, found - pos));
-    output.append(replacement);
-    pos = found + target.size();
-  }
-  return output;
-}
-
-template <typename CharT>
-auto replace_all_with_char(std::basic_string_view<CharT> const input,
-                           std::basic_string_view<CharT> const target,
-                           CharT const replacement)
-  -> std::basic_string<CharT> {
-  return replace_all(input, target, std::basic_string_view<CharT>{&replacement, 1});
-}
-
-template <typename CharT>
 auto swap_internal(std::basic_string_view<CharT> const input,
                    std::basic_string_view<CharT> const left,
                    std::basic_string_view<CharT> const right)
@@ -347,6 +317,7 @@ auto const write_replaced_with_char = [](
 
 auto const build_initial_candidates = [](std::u16string_view const string, int64_t const max_len) {
   auto candidates = std::vector<OrderedCandidate<char16_t>>{};
+  // Keys are views into `string`, which stays alive for the lifetime of this map.
   auto seen = std::unordered_map<std::u16string_view, size_t>{};
 
   if (string.size() < 2 || max_len <= 2) {
@@ -385,6 +356,7 @@ auto const rebuild_candidates = [](std::u16string_view const string,
                                    std::u16string_view const replaced,
                                    char16_t const replacement) {
   auto candidates = std::vector<OrderedCandidate<char16_t>>{};
+  // Keys are views into `string`, which stays alive for the lifetime of this map.
   auto seen = std::unordered_map<std::u16string_view, size_t>{};
   auto rewritten = std::u16string{};
   auto positions = std::vector<size_t>{};
