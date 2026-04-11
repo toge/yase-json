@@ -298,17 +298,24 @@ auto constexpr greedy_non_overlapping_count = [](std::vector<size_t> const& posi
   return count;
 };
 
-auto const replacement_characters_utf16 = [] {
-  std::u16string chars;
-  std::u16string_view unescaped = u"-_.!~*'()";
-  for (int i = 126; i > 0; --i) {
-    char16_t c = static_cast<char16_t>(i);
-    if ((i >= 48 && i <= 57) || (i >= 65 && i <= 90) || (i >= 97 && i <= 122) || unescaped.find(c) != std::u16string_view::npos)
-      chars.push_back(c);
+inline constexpr auto replacement_characters_utf16 = [] {
+  std::array<char16_t, 222> chars{};
+  size_t idx = 0;
+  auto const is_loop1 = [](int i) {
+    if (i <= 0) return false;
+    std::u16string_view const unescaped = u"-_.!~*'()";
+    return (i >= 48 && i <= 57) || (i >= 65 && i <= 90) || (i >= 97 && i <= 122) ||
+           unescaped.find(static_cast<char16_t>(i)) != std::u16string_view::npos;
+  };
+  for (int i = 254; i >= 32; --i) {
+    if (i != 92 && !is_loop1(i)) {
+      chars[idx++] = static_cast<char16_t>(i);
+    }
   }
-  for (int i = 32; i < 255; ++i) {
-    char16_t c = static_cast<char16_t>(i);
-    if (c != u'\\' && chars.find(c) == std::u16string::npos) chars.insert(chars.begin(), c);
+  for (int i = 126; i > 0; --i) {
+    if (is_loop1(i)) {
+      chars[idx++] = static_cast<char16_t>(i);
+    }
   }
   return chars;
 }();
@@ -318,15 +325,12 @@ auto build_initial_candidates(std::basic_string_view<CharT> const string, int64_
   std::vector<OrderedCandidate<CharT>> candidates;
   if (string.size() < 2) return candidates;
 
-  std::unordered_map<std::basic_string_view<CharT>, int64_t> counts;
-  std::vector<std::basic_string_view<CharT>> encounter_order;
-
   // To avoid O(N*L) string creations, we can use RollingHash to find repeats quickly.
   // But to match official JSONCrush's tie-breaking/order, we iterate in order of encounter.
   RollingHash<CharT> const hasher(string);
   std::unordered_map<uint64_t, std::vector<size_t>> buckets;
 
-  for (size_t len = 2; len <= static_cast<size_t>(max_len); ++len) {
+  for (size_t len = 2; len < static_cast<size_t>(max_len); ++len) {
     if (string.size() < len) break;
     for (size_t i = 0; i <= string.size() - len; ++i) {
       buckets[hasher.slice(i, len)].push_back(i);
@@ -335,7 +339,7 @@ auto build_initial_candidates(std::basic_string_view<CharT> const string, int64_
 
   std::unordered_map<std::basic_string_view<CharT>, bool> processed;
   for (size_t i = 0; i < string.size(); ++i) {
-    for (size_t len = 2; len <= static_cast<size_t>(max_len) && i + len <= string.size(); ++len) {
+    for (size_t len = 2; len < static_cast<size_t>(max_len) && i + len <= string.size(); ++len) {
       auto sub = string.substr(i, len);
       if (processed.count(sub)) continue;
 
@@ -397,14 +401,22 @@ auto const js_crush_utf16 = [](std::u16string string, int64_t const max_len = 50
     int64_t rep_len = encoded_uri_length(std::u16string_view{&replace_char, 1});
     int64_t delim_len = encoded_uri_length(std::u16string_view{&JSON_CRUSH_DELIMITER, 1});
 
-    for (size_t i = 0; i < candidates.size(); ++i) {
-      int64_t delta = (candidates[i].count - 1) * candidates[i].encoded_length - (candidates[i].count + 1) * rep_len;
+    auto it = candidates.begin();
+    while (it != candidates.end()) {
+      int64_t delta = (it->count - 1) * it->encoded_length - (it->count + 1) * rep_len;
       if (split_string.empty()) delta -= delim_len;
-      if (delta > best_delta) {
-        best_delta = delta; best_idx = i;
+      
+      if (delta <= 0) {
+        it = candidates.erase(it);
+      } else {
+        if (delta > best_delta) {
+          best_delta = delta;
+          best_idx = std::distance(candidates.begin(), it);
+        }
+        ++it;
       }
     }
-    if (best_delta <= 0) break;
+    if (best_delta <= 0 || candidates.empty()) break;
 
     auto const best_sub = candidates[best_idx].value;
     string = replace_all_with_char<char16_t>(string, best_sub, replace_char);
@@ -429,7 +441,7 @@ auto const js_crush_utf16 = [](std::u16string string, int64_t const max_len = 50
 
 } // namespace detail
 
-auto crush(std::string_view input) -> std::string {
+inline auto crush(std::string_view input) -> std::string {
   auto string = detail::utf8_to_utf16(input);
   string.erase(std::remove(string.begin(), string.end(), detail::JSON_CRUSH_DELIMITER), string.end());
   string = detail::json_crush_swap(string);
@@ -440,7 +452,7 @@ auto crush(std::string_view input) -> std::string {
   return detail::utf16_to_utf8(output);
 }
 
-auto uncrush(std::string_view input) -> std::string {
+inline auto uncrush(std::string_view input) -> std::string {
   auto string = detail::utf8_to_utf16(input);
   if (!string.empty()) string.pop_back();
   auto parts = detail::split_on_char(std::u16string_view{string}, detail::JSON_CRUSH_DELIMITER);
