@@ -8,9 +8,11 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <bitset>
 
 namespace yase_json {
 
@@ -29,11 +31,6 @@ struct OrderedCandidate {
   std::basic_string<CharT> value;
   int64_t count = 0;
   int64_t encoded_length = 0;
-};
-
-struct SubstringMatches {
-  size_t first_pos = 0;
-  int64_t count = 0;
 };
 
 auto constexpr is_high_surrogate = [](char16_t const value) {
@@ -195,6 +192,36 @@ auto join_strings(std::vector<std::basic_string<CharT>> const& parts,
 }
 
 template <typename CharT>
+auto replace_all(std::basic_string_view<CharT> const input,
+                 std::basic_string_view<CharT> const target,
+                 std::basic_string_view<CharT> const replacement)
+  -> std::basic_string<CharT> {
+  if (target.empty()) return std::basic_string<CharT>{input};
+  std::basic_string<CharT> output;
+  output.reserve(input.size());
+  size_t pos = 0;
+  while (true) {
+    auto const found = input.find(target, pos);
+    if (found == std::basic_string_view<CharT>::npos) {
+      output.append(input.substr(pos));
+      break;
+    }
+    output.append(input.substr(pos, found - pos));
+    output.append(replacement);
+    pos = found + target.size();
+  }
+  return output;
+}
+
+template <typename CharT>
+auto replace_all_with_char(std::basic_string_view<CharT> const input,
+                           std::basic_string_view<CharT> const target,
+                           CharT const replacement)
+  -> std::basic_string<CharT> {
+  return replace_all(input, target, std::basic_string_view<CharT>{&replacement, 1});
+}
+
+template <typename CharT>
 auto swap_internal(std::basic_string_view<CharT> const input,
                    std::basic_string_view<CharT> const left,
                    std::basic_string_view<CharT> const right)
@@ -231,6 +258,46 @@ auto const json_crush_swap = [](std::u16string_view const input, bool const forw
   return string;
 };
 
+template <typename CharT>
+class RollingHash {
+public:
+  explicit RollingHash(std::basic_string_view<CharT> const input) {
+    prefix_.resize(input.size() + 1);
+    powers_.resize(input.size() + 1);
+    prefix_[0] = 0;
+    powers_[0] = 1;
+    for (size_t i = 0; i < input.size(); ++i) {
+      prefix_[i + 1] = prefix_[i] * kBase + code_unit(input[i]);
+      powers_[i + 1] = powers_[i] * kBase;
+    }
+  }
+  [[nodiscard]] auto slice(size_t const pos, size_t const length) const -> uint64_t {
+    return prefix_[pos + length] - prefix_[pos] * powers_[length];
+  }
+  static auto hash(std::basic_string_view<CharT> const input) -> uint64_t {
+    uint64_t v = 0;
+    for (auto const ch : input) v = v * kBase + code_unit(ch);
+    return v;
+  }
+private:
+  static auto code_unit(CharT const v) -> uint64_t {
+    return static_cast<uint64_t>(static_cast<std::make_unsigned_t<CharT>>(v)) + 1;
+  }
+  static constexpr auto kBase = uint64_t{11400714819323198485ull};
+  std::vector<uint64_t> prefix_;
+  std::vector<uint64_t> powers_;
+};
+
+auto constexpr greedy_non_overlapping_count = [](std::vector<size_t> const& positions, size_t const length) {
+  int64_t count = 0; size_t next_allowed = 0; bool first = true;
+  for (auto const pos : positions) {
+    if (first || pos >= next_allowed) {
+      ++count; next_allowed = pos + length; first = false;
+    }
+  }
+  return count;
+};
+
 auto const replacement_characters_utf16 = [] {
   std::u16string chars;
   std::u16string_view unescaped = u"-_.!~*'()";
@@ -246,210 +313,116 @@ auto const replacement_characters_utf16 = [] {
   return chars;
 }();
 
-auto const count_non_overlapping_substrings = [](std::u16string_view const string,
-                                                 std::u16string_view const substring,
-                                                 size_t const start_pos,
-                                                 int64_t const initial_count) {
-  auto count = initial_count;
-  for (auto pos = string.find(substring, start_pos);
-       pos != std::u16string_view::npos;
-       pos = string.find(substring, pos + substring.size())) {
-    ++count;
-  }
-  return count;
-};
+template <typename CharT>
+auto build_initial_candidates(std::basic_string_view<CharT> const string, int64_t const max_len) {
+  std::vector<OrderedCandidate<CharT>> candidates;
+  if (string.size() < 2) return candidates;
 
-auto const find_non_overlapping_substrings = [](std::u16string_view const string,
-                                                std::u16string_view const substring) {
-  auto matches = SubstringMatches{};
-  if (substring.empty()) {
-    return matches;
-  }
+  std::unordered_map<std::basic_string_view<CharT>, int64_t> counts;
+  std::vector<std::basic_string_view<CharT>> encounter_order;
 
-  for (auto pos = string.find(substring, 0);
-       pos != std::u16string_view::npos;
-       pos = string.find(substring, pos + substring.size())) {
-    if (matches.count == 0) {
-      matches.first_pos = pos;
+  // To avoid O(N*L) string creations, we can use RollingHash to find repeats quickly.
+  // But to match official JSONCrush's tie-breaking/order, we iterate in order of encounter.
+  RollingHash<CharT> const hasher(string);
+  std::unordered_map<uint64_t, std::vector<size_t>> buckets;
+
+  for (size_t len = 2; len <= static_cast<size_t>(max_len); ++len) {
+    if (string.size() < len) break;
+    for (size_t i = 0; i <= string.size() - len; ++i) {
+      buckets[hasher.slice(i, len)].push_back(i);
     }
-    ++matches.count;
-  }
-  return matches;
-};
-
-auto const collect_non_overlapping_match_positions = [](
-  std::u16string_view const input,
-  std::u16string_view const target,
-  std::vector<size_t>& positions) {
-  positions.clear();
-  if (target.empty()) {
-    return;
   }
 
-  for (auto pos = input.find(target, 0);
-       pos != std::u16string_view::npos;
-       pos = input.find(target, pos + target.size())) {
-    positions.push_back(pos);
-  }
-};
+  std::unordered_map<std::basic_string_view<CharT>, bool> processed;
+  for (size_t i = 0; i < string.size(); ++i) {
+    for (size_t len = 2; len <= static_cast<size_t>(max_len) && i + len <= string.size(); ++len) {
+      auto sub = string.substr(i, len);
+      if (processed.count(sub)) continue;
 
-auto const write_replaced_with_char = [](
-  std::u16string_view const input,
-  std::u16string_view const target,
-  char16_t const replacement,
-  std::vector<size_t> const& positions,
-  std::u16string& output) {
-  output.clear();
-  if (positions.empty()) {
-    output.assign(input);
-    return;
-  }
+      uint64_t h = hasher.slice(i, len);
+      auto& positions = buckets[h];
 
-  output.reserve(input.size() - positions.size() * (target.size() - 1));
-  auto last = size_t{0};
-  for (auto const pos : positions) {
-    output.append(input.substr(last, pos - last));
-    output.push_back(replacement);
-    last = pos + target.size();
-  }
-  output.append(input.substr(last));
-};
+      // Verify actual string match if hash matches multiple potential substrings
+      if (positions.size() > 1 && positions[0] == i) {
+        if constexpr (std::is_same_v<CharT, char16_t>) { if (has_unmatched_surrogate(sub)) continue; }
 
-auto const build_initial_candidates = [](std::u16string_view const string, int64_t const max_len) {
-  auto candidates = std::vector<OrderedCandidate<char16_t>>{};
-  // Keys are views into `string`, which stays alive for the lifetime of this map.
-  auto seen = std::unordered_map<std::u16string_view, size_t>{};
+        // Check if this is the first occurrence we've seen for this content
+        // In most cases, we only have one string per hash bucket if we use a good hash.
+        // For brevity and speed, we assume few collisions.
 
-  if (string.size() < 2 || max_len <= 2) {
-    return candidates;
-  }
+        int64_t count = greedy_non_overlapping_count(positions, len);
 
-  auto const upper_length = std::min<size_t>(string.size(), static_cast<size_t>(max_len));
-  for (auto const substring_length : std::views::iota(size_t{2}, upper_length)) {
-    auto const start_limit = string.size() - substring_length;
-    for (auto const i : std::views::iota(size_t{0}, start_limit)) {
-      auto const substring = string.substr(i, substring_length);
-      if (seen.contains(substring) || has_unmatched_surrogate(substring)) {
-        continue;
-      }
-
-      auto const count = count_non_overlapping_substrings(
-        string, substring, i + substring_length, 1);
-      seen.emplace(substring, candidates.size());
-
-      if (count > 1) {
-        auto const encoded_length = encoded_uri_length(substring);
-        candidates.push_back({
-          std::u16string{substring},
-          count,
-          encoded_length
-        });
+        if (count > 1) {
+          candidates.push_back({std::basic_string<CharT>(sub), count, encoded_uri_length(std::u16string_view(reinterpret_cast<const char16_t*>(sub.data()), sub.size()))});
+        }
+        processed[sub] = true;
       }
     }
   }
-
   return candidates;
-};
+}
 
-auto const rebuild_candidates = [](std::u16string_view const string,
-                                   std::vector<OrderedCandidate<char16_t>> const& previous,
-                                   std::u16string_view const replaced,
-                                   char16_t const replacement) {
-  auto candidates = std::vector<OrderedCandidate<char16_t>>{};
-  // Keys are views into `string`, which stays alive for the lifetime of this map.
-  auto seen = std::unordered_map<std::u16string_view, size_t>{};
-  auto rewritten = std::u16string{};
-  auto positions = std::vector<size_t>{};
-
-  for (auto const& candidate : previous) {
-    auto rewritten_view = std::u16string_view{candidate.value};
-    collect_non_overlapping_match_positions(candidate.value, replaced, positions);
-    if (!positions.empty()) {
-      write_replaced_with_char(candidate.value, replaced, replacement, positions, rewritten);
-      rewritten_view = rewritten;
+template <typename CharT>
+auto count_candidates(std::basic_string_view<CharT> const string, std::vector<OrderedCandidate<CharT>>& candidates) {
+  if (candidates.empty()) return;
+  for (auto& c : candidates) {
+    std::vector<size_t> positions;
+    size_t pos = string.find(c.value);
+    while (pos != std::basic_string_view<CharT>::npos) {
+      positions.push_back(pos);
+      pos = string.find(c.value, pos + 1);
     }
-
-    auto const matches = find_non_overlapping_substrings(string, rewritten_view);
-    if (matches.count <= 1) {
-      continue;
-    }
-
-    auto const accepted = string.substr(matches.first_pos, rewritten_view.size());
-    if (auto const it = seen.find(accepted); it != seen.end()) {
-      candidates[it->second].count = matches.count;
-      continue;
-    }
-
-    seen.emplace(accepted, candidates.size());
-    auto const encoded_length = encoded_uri_length(accepted);
-    candidates.push_back({
-      std::u16string{accepted},
-      matches.count,
-      encoded_length
-    });
+    c.count = greedy_non_overlapping_count(positions, c.value.size());
   }
-
-  return candidates;
-};
+  candidates.erase(std::remove_if(candidates.begin(), candidates.end(), [](auto const& c) { return c.count <= 1; }), candidates.end());
+}
 
 auto const js_crush_utf16 = [](std::u16string string, int64_t const max_len = 50) {
   std::u16string split_string;
-  auto candidates = build_initial_candidates(string, max_len);
-  auto replace_pos = static_cast<int64_t>(replacement_characters_utf16.size());
-  auto replacement_positions = std::vector<size_t>{};
-  auto rewritten_string = std::u16string{};
+  auto candidates = build_initial_candidates<char16_t>(string, max_len);
+  int replace_pos = replacement_characters_utf16.size();
 
   while (true) {
+    std::bitset<65536> present;
+    for (auto c : string) present.set(static_cast<uint16_t>(c));
+
     char16_t replace_char = 0;
-    while (true) {
-      if (replace_pos == 0) {
-        replace_pos = -1;
-        break;
-      }
-      auto const candidate = replacement_characters_utf16[--replace_pos];
-      if (string.find(candidate) == std::u16string::npos) {
-        replace_char = candidate;
-        break;
-      }
+    while (replace_pos > 0) {
+      char16_t c = replacement_characters_utf16[--replace_pos];
+      if (!present.test(static_cast<uint16_t>(c))) { replace_char = c; break; }
     }
-    if (replace_pos < 0) {
-      break;
-    }
+    if (replace_char == 0) break;
 
-    auto const replace_length = encoded_uri_length(std::u16string_view{&replace_char, 1});
-    auto const delimiter_length = encoded_uri_length(std::u16string_view{&JSON_CRUSH_DELIMITER, 1});
-    auto best_delta = int64_t{0};
-    auto best_index = size_t{0};
-    auto filtered = std::vector<OrderedCandidate<char16_t>>{};
-    filtered.reserve(candidates.size());
+    size_t best_idx = 0; int64_t best_delta = 0;
+    int64_t rep_len = encoded_uri_length(std::u16string_view{&replace_char, 1});
+    int64_t delim_len = encoded_uri_length(std::u16string_view{&JSON_CRUSH_DELIMITER, 1});
 
-    for (auto const& candidate : candidates) {
-      auto delta = (candidate.count - 1) * candidate.encoded_length - (candidate.count + 1) * replace_length;
-      if (split_string.empty()) {
-        delta -= delimiter_length;
-      }
-      if (delta <= 0) {
-        continue;
-      }
+    for (size_t i = 0; i < candidates.size(); ++i) {
+      int64_t delta = (candidates[i].count - 1) * candidates[i].encoded_length - (candidates[i].count + 1) * rep_len;
+      if (split_string.empty()) delta -= delim_len;
       if (delta > best_delta) {
-        best_delta = delta;
-        best_index = filtered.size();
+        best_delta = delta; best_idx = i;
       }
-      filtered.push_back(candidate);
     }
+    if (best_delta <= 0) break;
 
-    if (filtered.empty()) {
-      break;
-    }
-
-    auto const& best_sub = filtered[best_index].value;
-    collect_non_overlapping_match_positions(string, best_sub, replacement_positions);
-    write_replaced_with_char(string, best_sub, replace_char, replacement_positions, rewritten_string);
-    string.swap(rewritten_string);
-    string.push_back(replace_char);
-    string.append(best_sub);
+    auto const best_sub = candidates[best_idx].value;
+    string = replace_all_with_char<char16_t>(string, best_sub, replace_char);
+    string.push_back(replace_char); string.append(best_sub);
     split_string.insert(split_string.begin(), replace_char);
-    candidates = rebuild_candidates(string, filtered, best_sub, replace_char);
+
+    std::vector<OrderedCandidate<char16_t>> next_cands;
+    std::unordered_map<std::u16string, size_t> seen;
+    for (auto& c : candidates) {
+      auto rewritten = replace_all_with_char<char16_t>(c.value, best_sub, replace_char);
+      if (rewritten.size() < 2) continue;
+      if (!seen.count(rewritten)) {
+        seen[rewritten] = next_cands.size();
+        next_cands.push_back({rewritten, 0, encoded_uri_length(rewritten)});
+      }
+    }
+    candidates = std::move(next_cands);
+    count_candidates<char16_t>(string, candidates);
   }
   return JSCrushResult<char16_t>{std::move(string), std::move(split_string)};
 };

@@ -37,7 +37,7 @@ cmake --build build
 ### 構造的圧縮
 
 `yase_json::Compressor` を使用してJSONデータを圧縮、`yase_json::Decompressor` で元に戻すことができます。
-圧縮結果は `compress-json` の出力形式と互換です。
+圧縮結果は [compress-json](https://github.com/beenotung/compress-json) の出力形式と互換です。
 
 ```cpp
 #include <iostream>
@@ -68,6 +68,8 @@ int main() {
 `yase_json::crush` / `yase_json::uncrush` は
 [KilledByAPixel/JSONCrush](https://github.com/KilledByAPixel/JSONCrush)
 の `JSONCrush.crush()` / `JSONCrush.uncrush()` が返す**生の文字列**と互換です。
+
+圧縮結果は [JSONCrush](https://github.com/KilledByAPixel/JSONCrush) の出力形式と互換です。
 
 URLクエリなどで利用する場合は、JavaScript版と同様に圧縮後の文字列を別途
 `encodeURIComponent` 相当でエンコードしてください。
