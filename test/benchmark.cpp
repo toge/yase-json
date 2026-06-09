@@ -10,6 +10,7 @@
 #include "yase-json/decompress.hpp"
 #include "yase-json/crush.hpp"
 #include "yase-json/fast_compress.hpp"
+#include "yase-json/fast_compress_crusher.hpp"
 
 void print_diff(const std::string& s1, const std::string& s2) {
     size_t len = std::min(s1.size(), s2.size());
@@ -154,6 +155,43 @@ int main() {
       auto const uncrushed = yase_json::uncrush(last_crushed);
       if (uncrushed != compressed_str) {
         std::cerr << "FastCrusher verification failed: uncrushed != compressed_str\n";
+        return 1;
+      }
+    }
+
+    // --- FastCompressCrusher ベンチマーク ---
+    {
+      auto fast_crusher = yase_json::FastCompressCrusher{};
+      constexpr auto iterations = 10;
+
+      auto const fast_start = std::chrono::high_resolution_clock::now();
+      auto last_crushed = std::string{};
+      for (auto const _ : std::views::iota(0, iterations)) {
+        std::ignore = _;
+        last_crushed = fast_crusher.compress_crush(json_str);
+      }
+      auto const fast_end = std::chrono::high_resolution_clock::now();
+      auto const fast_total = std::chrono::duration_cast<std::chrono::milliseconds>(fast_end - fast_start).count();
+
+      std::cout << "\n--- FastCompressCrusher (" << iterations << " iterations) ---\n";
+      std::cout << "Crushed Size (last): " << last_crushed.size() << " bytes\n";
+      std::cout << "Total: " << fast_total << " ms"
+                << ", Per iteration: " << fast_total / static_cast<double>(iterations) << " ms\n";
+
+      // 最終イテレーションの出力を検証
+      auto const decompressed = fast_crusher.uncrush_decompress(last_crushed);
+      glz::generic original_parsed, decompressed_parsed;
+      if (auto const ec = glz::read_json(original_parsed, json_str)) {
+        throw std::runtime_error("Failed to read original JSON");
+      }
+      if (auto const ec = glz::read_json(decompressed_parsed, decompressed)) {
+        throw std::runtime_error("Failed to read decompressed JSON");
+      }
+      std::string s1, s2;
+      glz::write_json(original_parsed, s1);
+      glz::write_json(decompressed_parsed, s2);
+      if (s1 != s2) {
+        std::cerr << "FastCompressCrusher verification failed\n";
         return 1;
       }
     }
