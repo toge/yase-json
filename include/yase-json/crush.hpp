@@ -3,7 +3,9 @@
 
 #include <algorithm>
 #include <array>
+#include <bitset>
 #include <cstdint>
+#include <iterator>
 #include <ranges>
 #include <stdexcept>
 #include <string>
@@ -12,7 +14,6 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <bitset>
 
 namespace yase_json {
 
@@ -466,6 +467,30 @@ inline auto uncrush(std::string_view input) -> std::string {
     }
   }
   return detail::utf16_to_utf8(detail::json_crush_swap(uncrushed, false));
+}
+
+inline auto crush(std::string_view input, std::string& out) -> std::size_t {
+  auto const result = crush(input);
+  out.append(result);
+  return result.size();
+}
+
+inline auto uncrush(std::string_view input, std::string& out) -> std::size_t {
+  auto const result = uncrush(input);
+  out.append(result);
+  return result.size();
+}
+
+template <std::output_iterator<char> OutputIt>
+inline auto crush(std::string_view input, OutputIt out) -> OutputIt {
+  auto const result = crush(input);
+  return std::copy(result.begin(), result.end(), out);
+}
+
+template <std::output_iterator<char> OutputIt>
+inline auto uncrush(std::string_view input, OutputIt out) -> OutputIt {
+  auto const result = uncrush(input);
+  return std::copy(result.begin(), result.end(), out);
 }
 
 } // namespace yase_json
