@@ -9,6 +9,7 @@
 #include "yase-json/compress.hpp"
 #include "yase-json/decompress.hpp"
 #include "yase-json/crush.hpp"
+#include "yase-json/fast_compress.hpp"
 
 void print_diff(const std::string& s1, const std::string& s2) {
     size_t len = std::min(s1.size(), s2.size());
@@ -87,6 +88,74 @@ int main() {
       std::cerr << "Verification failed: original != decompressed\n";
       print_diff(s1, s2);
       return 1;
+    }
+
+    // --- FastCompressor ベンチマーク ---
+    {
+      auto fast_compressor = yase_json::FastCompressor{};
+      constexpr auto iterations = 10;
+
+      // 初回呼び出しでスキーマを学習
+      auto first_compressed = fast_compressor.compress(json_str);
+
+      auto const fast_start = std::chrono::high_resolution_clock::now();
+      auto last_compressed = std::string{};
+      for (auto const _ : std::views::iota(0, iterations)) {
+        std::ignore = _;
+        last_compressed = fast_compressor.compress(json_str);
+      }
+      auto const fast_end = std::chrono::high_resolution_clock::now();
+      auto const fast_total = std::chrono::duration_cast<std::chrono::milliseconds>(fast_end - fast_start).count();
+
+      std::cout << "\n--- FastCompressor (" << iterations << " iterations) ---\n";
+      std::cout << "Total: " << fast_total << " ms"
+                << ", Per iteration: " << fast_total / static_cast<double>(iterations) << " ms\n";
+
+      // 最終イテレーションの出力を検証
+      auto const decompressed = yase_json::Decompressor{}.decompress(last_compressed);
+      glz::generic original_parsed, decompressed_parsed;
+      if (auto const ec = glz::read_json(original_parsed, json_str)) {
+        throw std::runtime_error("Failed to read original JSON");
+      }
+      if (auto const ec = glz::read_json(decompressed_parsed, decompressed)) {
+        throw std::runtime_error("Failed to read decompressed JSON");
+      }
+      std::string s1, s2;
+      glz::write_json(original_parsed, s1);
+      glz::write_json(decompressed_parsed, s2);
+      if (s1 != s2) {
+        std::cerr << "FastCompressor verification failed\n";
+        return 1;
+      }
+    }
+
+    // --- FastCrusher ベンチマーク ---
+    {
+      auto fast_crusher = yase_json::FastCrusher{};
+      constexpr auto iterations = 10;
+
+      // warm_up で辞書を構築
+      fast_crusher.warm_up(compressed_str);
+
+      auto const fast_start = std::chrono::high_resolution_clock::now();
+      auto last_crushed = std::string{};
+      for (auto const _ : std::views::iota(0, iterations)) {
+        std::ignore = _;
+        last_crushed = fast_crusher.crush(compressed_str);
+      }
+      auto const fast_end = std::chrono::high_resolution_clock::now();
+      auto const fast_total = std::chrono::duration_cast<std::chrono::milliseconds>(fast_end - fast_start).count();
+
+      std::cout << "\n--- FastCrusher (" << iterations << " iterations, after warm_up) ---\n";
+      std::cout << "Total: " << fast_total << " ms"
+                << ", Per iteration: " << fast_total / static_cast<double>(iterations) << " ms\n";
+
+      // 最終イテレーションの出力を検証
+      auto const uncrushed = yase_json::uncrush(last_crushed);
+      if (uncrushed != compressed_str) {
+        std::cerr << "FastCrusher verification failed: uncrushed != compressed_str\n";
+        return 1;
+      }
     }
 
   } catch (const std::exception& e) {
