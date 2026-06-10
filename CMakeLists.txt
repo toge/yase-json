@@ -40,8 +40,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-enable_testing()
-add_subdirectory(test)
+option(ENABLE_TEST "Enable tests" ON)
+
+if(ENABLE_TEST)
+    enable_testing()
+    add_subdirectory(test)
+endif()
 
 find_package(glaze REQUIRED CONFIG)
 
