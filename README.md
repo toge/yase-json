@@ -14,6 +14,7 @@
 - **高速な処理**:
   - `glaze` の `glz::generic` を活用し、効率的な JSON 操作を実現しています。
   - Base62のデコードには高速なルックアップテーブルを使用しています。
+  - **選択的フィールド圧縮**: 特定のフィールドのみを対象にした高速な圧縮が可能です（静的・動的選択をサポート）。
 
 ## 要件
 
@@ -59,6 +60,24 @@ int main() {
 
   return 0;
 }
+```
+
+### 高速な構造的圧縮 (FastCompressor)
+
+`yase_json::FastCompressor` を使用して、特定のフィールドのみを対象にした高速な圧縮が可能です。
+
+#### 動的選択 (実行時)
+```cpp
+yase_json::FastCompressor compressor;
+compressor.set_fields({"name", "age"}); // 圧縮対象フィールドを指定
+std::string compressed = compressor.compress(json_str);
+```
+
+#### 静的選択 (コンパイル時)
+```cpp
+// コンパイル時にフィールドを固定して最適化
+yase_json::StaticFastCompressor<"name", "age"> compressor;
+std::string compressed = compressor.compress(json_str);
 ```
 
 ### JSONCrush (文字列レベルの圧縮)

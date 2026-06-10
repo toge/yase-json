@@ -13,6 +13,15 @@
 
 namespace yase_json {
 
+template<size_t N>
+struct FixedString {
+  char buf[N];
+  constexpr FixedString(char const (&s)[N]) {
+    for (size_t i = 0; i < N; ++i) buf[i] = s[i];
+  }
+  constexpr operator std::string_view() const { return {buf, N - 1}; }
+};
+
 /**
  * @brief 同一キー集合のJSONオブジェクトを高速に圧縮するクラス。
  *
@@ -28,6 +37,13 @@ public:
   /** @brief キャッシュをリセットする（キー集合が変わる場合に呼ぶ） */
   auto reset() noexcept -> void;
 
+  /** @brief 圧縮対象のフィールドを設定する */
+  auto set_fields(std::vector<std::string> fields) -> void {
+    reset();
+    target_fields_ = std::move(fields);
+    is_selective_ = true;
+  }
+
 private:
   detail::CompressionMemory memory_{};
   size_t schema_snapshot_size_{0};
@@ -35,8 +51,19 @@ private:
   std::vector<std::string> cached_keys_{};
   std::string cached_schema_key_{};
 
+  std::vector<std::string> target_fields_{};
+  bool is_selective_{false};
+
   /** @brief オブジェクトのキーがスキーマと一致するか確認する */
   auto keys_match_schema(glz::generic::object_t const& object) const -> bool;
+};
+
+template<FixedString... Fields>
+class StaticFastCompressor : public FastCompressor {
+public:
+  StaticFastCompressor() {
+    set_fields({std::string(Fields)...});
+  }
 };
 
 // --- FastCompressor 実装 ---
@@ -50,6 +77,18 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
   // オブジェクト以外の入力は通常の Compressor に委譲
   if (!data.is_object()) {
     return Compressor{}.compress(json_str);
+  }
+
+  // フィールド選択が有効な場合、オブジェクトをフィルタリング
+  if (is_selective_) {
+    auto const& original_object = data.get<glz::generic::object_t>();
+    auto filtered_object = glz::generic::object_t{};
+    for (auto const& field : target_fields_) {
+      if (original_object.contains(field)) {
+        filtered_object[field] = original_object.at(field);
+      }
+    }
+    data = std::move(filtered_object);
   }
 
   auto const& object = data.get<glz::generic::object_t>();
