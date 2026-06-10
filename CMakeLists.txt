@@ -1,17 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 project(yase-json LANGUAGES CXX)
 
-## add stdc++ compiler flag
-include(CheckCXXCompilerFlag)
-CHECK_CXX_COMPILER_FLAG("-std=c++26" COMPILER_SUPPORTS_CXX26)
-CHECK_CXX_COMPILER_FLAG("-std=c++23" COMPILER_SUPPORTS_CXX23)
-if(COMPILER_SUPPORTS_CXX26)
-    set(STD_CPP cxx_std_26)
-elseif(COMPILER_SUPPORTS_CXX23)
-    set(STD_CPP cxx_std_23)
-else()
-    message(STATUS "The compiler ${CMAKE_CXX_COMPILER} has no C++23 support. Please use a different C++ compiler.")
-endif()
+option(BUILD_TEST "Enable tests" ON)
+option(BUILD_EXAMPLE "Enable examples" ON)
 
 ## add warning
 if (CMAKE_COMPILER_IS_GNUCXX)
@@ -40,13 +31,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(ENABLE_TEST "Enable tests" ON)
-
-if(ENABLE_TEST)
-    enable_testing()
-    add_subdirectory(test)
-endif()
-
 find_package(glaze REQUIRED CONFIG)
 
 # --- Library Target ---
@@ -59,10 +43,6 @@ target_include_directories(yase-json INTERFACE
 )
 
 target_link_libraries(yase-json INTERFACE glaze::glaze)
-
-add_executable(example example.cpp)
-target_link_libraries(example PRIVATE yase-json::yase-json)
-target_compile_features(example PRIVATE ${STD_CPP})
 
 # --- Installer ---
 include(GNUInstallDirs)
@@ -81,7 +61,6 @@ install(EXPORT yase-json-targets
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/yase-json
 )
 
-# --- Config for find_package ---
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file(
     "yase-json-config-version.cmake"
@@ -100,3 +79,15 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/yase-json-config-version.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/yase-json
 )
+
+# --- Tests & Examples ---
+if(BUILD_TEST)
+    enable_testing()
+    add_subdirectory(test)
+endif()
+
+if(BUILD_EXAMPLE)
+    add_executable(example example.cpp)
+    target_link_libraries(example PRIVATE yase-json::yase-json)
+    target_compile_features(example PRIVATE cxx_std_23)
+endif()
