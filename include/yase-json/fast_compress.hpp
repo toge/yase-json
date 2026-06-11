@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -150,6 +151,20 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
     }
   }
 
+  // schema_cache のエントリが参照する value_key も
+  // スナップショット範囲内 [0, schema_snapshot_size_) に収まることを保証する。
+  // スキーマは固定されているため通常クリア不要だが、
+  // values の resize 後に schema_cache の整合性を明示的に検証する。
+  // キャッシュヒット後は schema_snapshot_size_ 以降に新規エントリは追加されないため
+  // 既存の schema_cache エントリは全て有効である。
+  // ただし不変条件として assert を追加する:
+#ifndef NDEBUG
+  for (auto const& [sig, key] : memory_.schema_cache) {
+    assert(detail::from_base62(key) < schema_snapshot_size_
+           && "schema_cache key out of snapshot range");
+  }
+#endif
+
   // スキーマキーを直接使い、各値をエンコード
   auto encoded = std::string{"o|"};
   encoded += cached_schema_key_;
@@ -189,6 +204,7 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
 }
 
 inline auto FastCompressor::reset() noexcept -> void {
+  // memory_ の再構築により value_cache / schema_cache を含む全キャッシュをクリアする
   memory_ = detail::CompressionMemory{};
   schema_snapshot_size_ = 0;
   schema_cached_ = false;

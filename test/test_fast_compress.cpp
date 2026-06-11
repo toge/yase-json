@@ -138,3 +138,22 @@ TEST_CASE("FastCrusher の基本動作", "[fast_crush]") {
     verify_json_equal(R"({"x":90.0,"y":80.0})", crusher.uncrush(crushed2));
   }
 }
+
+TEST_CASE("FastCompressor schema_cache 整合性", "[fast_compress]") {
+  yase_json::FastCompressor compressor;
+  yase_json::Decompressor decompressor;
+
+  SECTION("異なるキー集合を reset 後に再圧縮しても正しく復元できる") {
+    for (auto i = 0; i < 3; ++i) {
+      auto const input = R"({"a":1.0,"b":2.0,"c":3.0})";
+      auto const compressed = compressor.compress(input);
+      verify_json_equal(input, decompressor.decompress(compressed));
+    }
+    compressor.reset();
+    for (auto i = 0; i < 3; ++i) {
+      auto const input = R"({"x":9.0,"y":8.0,"z":7.0})";
+      auto const compressed = compressor.compress(input);
+      verify_json_equal(input, decompressor.decompress(compressed));
+    }
+  }
+}

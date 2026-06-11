@@ -3,6 +3,7 @@ project(yase-json LANGUAGES CXX)
 
 option(BUILD_TEST "Enable tests" ON)
 option(BUILD_EXAMPLE "Enable examples" ON)
+option(BUILD_BENCH "Enable benchmarks" OFF)
 
 ## add warning
 if (CMAKE_COMPILER_IS_GNUCXX)

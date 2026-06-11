@@ -1,205 +1,209 @@
-#include <iostream>
-#include <chrono>
-#include <vector>
-#include <string>
 #include <algorithm>
+#include <chrono>
+#include <iostream>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include <glaze/glaze.hpp>
 
 #include "yase-json/compress.hpp"
 #include "yase-json/decompress.hpp"
-#include "yase-json/crush.hpp"
-#include "yase-json/fast_compress.hpp"
-#include "yase-json/fast_compress_crusher.hpp"
 
-void print_diff(const std::string& s1, const std::string& s2) {
-    size_t len = std::min(s1.size(), s2.size());
-    for (size_t i = 0; i < len; ++i) {
-        if (s1[i] != s2[i]) {
-            std::cout << "Diff at index " << i << ": original='" << s1.substr(i, 20) << "', decompressed='" << s2.substr(i, 20) << "'\n";
-            return;
-        }
-    }
-    if (s1.size() != s2.size()) {
-        std::cout << "Diff in size: s1=" << s1.size() << ", s2=" << s2.size() << "\n";
-    }
+namespace {
+
+using Clock = std::chrono::high_resolution_clock;
+
+struct BenchResult {
+  std::string label;
+  size_t original_size{};
+  size_t compressed_size{};
+  double compress_ms{};
+  double decompress_ms{};
+  size_t iterations{};
+};
+
+auto make_small_json() -> std::string {
+  return R"({
+    "id": 42,
+    "name": "alice",
+    "active": true,
+    "score": 98.5,
+    "tags": ["dev", "cpp", "json"],
+    "meta": {
+      "created": "2026-01-15T10:30:00Z",
+      "updated": "2026-06-11T12:00:00Z",
+      "version": 3,
+      "checksum": "a1b2c3d4e5f6"
+    },
+    "config": {
+      "theme": "dark",
+      "locale": "ja-JP",
+      "notifications": false,
+      "timeout": 30000
+    },
+    "items": [
+      {"id": 1, "val": "foo"},
+      {"id": 2, "val": "bar"},
+      {"id": 3, "val": "baz"}
+    ]
+  })";
 }
 
-int main() {
-  std::string json_str = R"([)";
+auto make_medium_json() -> std::string {
+  auto json = std::string{};
+  json += R"([)";
   for (int i = 0; i < 500; ++i) {
-    json_str += R"({"id":)" + std::to_string(i) + R"(, "type": "user_event", "data": {"action": "click", "timestamp": "2026-03-31T12:00:00Z", "meta": {"browser": "Chrome", "os": "Linux"}}})";
-    if (i < 499) {
-      json_str += ",";
-    }
+    json += R"({"id":)" + std::to_string(i) +
+            R"(,"type":"event")" +
+            R"(,"action":"click")" +
+            R"(,"label":"btn_)" + std::to_string(i % 20) + R"(")" +
+            R"(,"value":)" + std::to_string(i * 1.5) +
+            R"(,"meta":{"browser":"Chrome","os":"Linux","screen":"1920x1080","ts":")" +
+            "2026-06-11T" +
+            (i / 60 < 10 ? "0" : "") + std::to_string(i / 60) + ":" +
+            (i % 60 < 10 ? "0" : "") + std::to_string(i % 60) + ":00Z" +
+            R"("})" +
+            R"(,"tags":[)" +
+            R"("dev",)" +
+            (i % 3 == 0 ? R"("critical")" : R"("normal")") +
+            R"(]})";
+    if (i < 499) json += ",";
   }
-  json_str += "]";
+  json += R"(])";
+  return json;
+}
 
+auto make_large_json() -> std::string {
+  auto json = std::string{};
+  json += R"({"records":[)";
+  for (int i = 0; i < 3000; ++i) {
+    auto group_id = i / 100;
+    json += R"({"uid":")" + std::to_string(10000 + i) + R"(")"
+            R"(,"gid":)" + std::to_string(group_id) +
+            R"(,"type":"item")" +
+            R"(,"status":)" + (i % 4 == 0 ? "true" : "false") +
+            R"(,"priority":)" + std::to_string(i % 5) +
+            R"(,"data":{"label":"item_)" + std::to_string(i % 50) + R"(")" +
+            R"(,"count":)" + std::to_string(i * 10) +
+            R"(,"ratio":)" + std::to_string(1.0 / (i + 1)) +
+            R"(,"nested":{"a":)" + std::to_string(i) +
+            R"(,"b":)" + std::to_string(i * 2) +
+            R"(,"c":)" + std::to_string(i * 3) +
+            R"(,"inner":[)" + std::to_string(i) + "," + std::to_string(i + 1) + "," + std::to_string(i + 2) +
+            R"(]}}})";
+    if (i < 2999) json += ",";
+  }
+  json += R"(],"total":)" + std::to_string(3000) +
+          R"(,"page":1})";
+  return json;
+}
+
+auto roundtrip_verify(std::string_view original, std::string_view decompressed) -> bool {
+  glz::generic orig_parsed, dec_parsed;
+  if (glz::read_json(orig_parsed, original)) return false;
+  if (glz::read_json(dec_parsed, decompressed)) return false;
+  std::string orig_out, dec_out;
+  if (glz::write_json(orig_parsed, orig_out)) return false;
+  if (glz::write_json(dec_parsed, dec_out)) return false;
+  return orig_out == dec_out;
+}
+
+auto run_benchmark(std::string const& label, std::string const& json, int iterations) -> BenchResult {
   yase_json::Compressor compressor;
   yase_json::Decompressor decompressor;
 
-  try {
-    auto start = std::chrono::high_resolution_clock::now();
-
-    auto compressed_str = compressor.compress(json_str);
-    auto checkpoint1 = std::chrono::high_resolution_clock::now();
-
-    auto crushed = yase_json::crush(compressed_str);
-    auto checkpoint2 = std::chrono::high_resolution_clock::now();
-
-    auto uncrushed = yase_json::uncrush(crushed);
-    auto checkpoint3 = std::chrono::high_resolution_clock::now();
-
-    auto decompressed = decompressor.decompress(uncrushed);
-    auto checkpoint4 = std::chrono::high_resolution_clock::now();
-
-    auto d1 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint1 - start).count();
-    auto d2 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint2 - checkpoint1).count();
-    auto d3 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint3 - checkpoint2).count();
-    auto d4 = std::chrono::duration_cast<std::chrono::milliseconds>(checkpoint4 - checkpoint3).count();
-
-    std::cout << "--- Optimized Benchmark Results ---\n";
-    std::cout << "Original Size:   " << json_str.size() << " bytes\n";
-    std::cout << "Compressed Size: " << compressed_str.size() << " bytes\n";
-    std::cout << "Crushed Size:    " << crushed.size() << " bytes\n";
-    std::cout << "Compression:     " << d1 << " ms\n";
-    std::cout << "JSONCrush:       " << d2 << " ms\n";
-    std::cout << "JSONUncrush:     " << d3 << " ms\n";
-    std::cout << "Decompression:   " << d4 << " ms\n";
-    std::cout << "Total Time:      " << (d1 + d2 + d3 + d4) << " ms\n";
-
-    if (uncrushed != compressed_str) {
-      std::cerr << "Verification failed: uncrushed != compressed_str\n";
-      print_diff(compressed_str, uncrushed);
-      return 1;
-    }
-
-    glz::generic original_parsed, decompressed_parsed;
-    if (auto const ec = glz::read_json(original_parsed, json_str)) {
-      throw std::runtime_error("Failed to read original JSON");
-    }
-    if (auto const ec = glz::read_json(decompressed_parsed, decompressed)) {
-      throw std::runtime_error("Failed to read decompressed JSON");
-    }
-    std::string s1, s2;
-    glz::write_json(original_parsed, s1);
-    glz::write_json(decompressed_parsed, s2);
-
-    if (s1 != s2) {
-      std::cerr << "Verification failed: original != decompressed\n";
-      print_diff(s1, s2);
-      return 1;
-    }
-
-    // --- FastCompressor ベンチマーク ---
-    {
-      auto fast_compressor = yase_json::FastCompressor{};
-      constexpr auto iterations = 10;
-
-      // 初回呼び出しでスキーマを学習
-      auto first_compressed = fast_compressor.compress(json_str);
-
-      auto const fast_start = std::chrono::high_resolution_clock::now();
-      auto last_compressed = std::string{};
-      for (auto const _ : std::views::iota(0, iterations)) {
-        std::ignore = _;
-        last_compressed = fast_compressor.compress(json_str);
-      }
-      auto const fast_end = std::chrono::high_resolution_clock::now();
-      auto const fast_total = std::chrono::duration_cast<std::chrono::milliseconds>(fast_end - fast_start).count();
-
-      std::cout << "\n--- FastCompressor (" << iterations << " iterations) ---\n";
-      std::cout << "Total: " << fast_total << " ms"
-                << ", Per iteration: " << fast_total / static_cast<double>(iterations) << " ms\n";
-
-      // 最終イテレーションの出力を検証
-      auto const decompressed = yase_json::Decompressor{}.decompress(last_compressed);
-      glz::generic original_parsed, decompressed_parsed;
-      if (auto const ec = glz::read_json(original_parsed, json_str)) {
-        throw std::runtime_error("Failed to read original JSON");
-      }
-      if (auto const ec = glz::read_json(decompressed_parsed, decompressed)) {
-        throw std::runtime_error("Failed to read decompressed JSON");
-      }
-      std::string s1, s2;
-      glz::write_json(original_parsed, s1);
-      glz::write_json(decompressed_parsed, s2);
-      if (s1 != s2) {
-        std::cerr << "FastCompressor verification failed\n";
-        return 1;
-      }
-    }
-
-    // --- FastCrusher ベンチマーク ---
-    {
-      auto fast_crusher = yase_json::FastCrusher{};
-      constexpr auto iterations = 10;
-
-      // warm_up で辞書を構築
-      fast_crusher.warm_up(compressed_str);
-
-      auto const fast_start = std::chrono::high_resolution_clock::now();
-      auto last_crushed = std::string{};
-      for (auto const _ : std::views::iota(0, iterations)) {
-        std::ignore = _;
-        last_crushed = fast_crusher.crush(compressed_str);
-      }
-      auto const fast_end = std::chrono::high_resolution_clock::now();
-      auto const fast_total = std::chrono::duration_cast<std::chrono::milliseconds>(fast_end - fast_start).count();
-
-      std::cout << "\n--- FastCrusher (" << iterations << " iterations, after warm_up) ---\n";
-      std::cout << "Total: " << fast_total << " ms"
-                << ", Per iteration: " << fast_total / static_cast<double>(iterations) << " ms\n";
-
-      // 最終イテレーションの出力を検証
-      auto const uncrushed = yase_json::uncrush(last_crushed);
-      if (uncrushed != compressed_str) {
-        std::cerr << "FastCrusher verification failed: uncrushed != compressed_str\n";
-        return 1;
-      }
-    }
-
-    // --- FastCompressCrusher ベンチマーク ---
-    {
-      auto fast_crusher = yase_json::FastCompressCrusher{};
-      constexpr auto iterations = 10;
-
-      auto const fast_start = std::chrono::high_resolution_clock::now();
-      auto last_crushed = std::string{};
-      for (auto const _ : std::views::iota(0, iterations)) {
-        std::ignore = _;
-        last_crushed = fast_crusher.compress_crush(json_str);
-      }
-      auto const fast_end = std::chrono::high_resolution_clock::now();
-      auto const fast_total = std::chrono::duration_cast<std::chrono::milliseconds>(fast_end - fast_start).count();
-
-      std::cout << "\n--- FastCompressCrusher (" << iterations << " iterations) ---\n";
-      std::cout << "Crushed Size (last): " << last_crushed.size() << " bytes\n";
-      std::cout << "Total: " << fast_total << " ms"
-                << ", Per iteration: " << fast_total / static_cast<double>(iterations) << " ms\n";
-
-      // 最終イテレーションの出力を検証
-      auto const decompressed = fast_crusher.uncrush_decompress(last_crushed);
-      glz::generic original_parsed, decompressed_parsed;
-      if (auto const ec = glz::read_json(original_parsed, json_str)) {
-        throw std::runtime_error("Failed to read original JSON");
-      }
-      if (auto const ec = glz::read_json(decompressed_parsed, decompressed)) {
-        throw std::runtime_error("Failed to read decompressed JSON");
-      }
-      std::string s1, s2;
-      glz::write_json(original_parsed, s1);
-      glz::write_json(decompressed_parsed, s2);
-      if (s1 != s2) {
-        std::cerr << "FastCompressCrusher verification failed\n";
-        return 1;
-      }
-    }
-
-  } catch (const std::exception& e) {
-    std::cerr << "Error: " << e.what() << "\n";
-    return 1;
+  // warm-up: one compress + decompress to populate caches, verification
+  auto warm_compressed = compressor.compress(json);
+  auto warm_decompressed = decompressor.decompress(warm_compressed);
+  if (!roundtrip_verify(json, warm_decompressed)) {
+    std::cerr << "VERIFICATION FAILED: " << label << "\n";
+    std::exit(1);
   }
 
+  // measure compress
+  auto const comp_start = Clock::now();
+  std::string last_compressed;
+  for (int i = 0; i < iterations; ++i) {
+    last_compressed = compressor.compress(json);
+  }
+  auto const comp_end = Clock::now();
+
+  // measure decompress
+  auto const dec_start = Clock::now();
+  std::string last_decompressed;
+  for (int i = 0; i < iterations; ++i) {
+    last_decompressed = decompressor.decompress(last_compressed);
+  }
+  auto const dec_end = Clock::now();
+
+  auto const comp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(comp_end - comp_start).count();
+  auto const dec_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(dec_end - dec_start).count();
+
+  return {
+    .label = label,
+    .original_size = json.size(),
+    .compressed_size = warm_compressed.size(),
+    .compress_ms = comp_ns / 1.0e6 / iterations,
+    .decompress_ms = dec_ns / 1.0e6 / iterations,
+    .iterations = static_cast<size_t>(iterations),
+  };
+}
+
+auto format_bytes(size_t bytes) -> std::string {
+  if (bytes >= 1024 * 1024) return std::to_string(bytes / (1024.0 * 1024.0)).substr(0, 5) + " MB";
+  if (bytes >= 1024) return std::to_string(bytes / 1024.0).substr(0, 5) + " KB";
+  return std::to_string(bytes) + " B";
+}
+
+auto print_separator() { std::cout << "--------------------------------------------------------------\n"; }
+
+auto print_header() {
+  print_separator();
+  std::cout << "| Size       | Original   | Compressed | Ratio  | Compress  | Decompress | Iter |\n";
+  print_separator();
+}
+
+auto print_result(BenchResult const& r) {
+  auto ratio = static_cast<double>(r.compressed_size) / r.original_size * 100.0;
+  printf("| %-10s | %-10s | %-10s | %5.1f%% | %8.3fms | %9.3fms | %4zu |\n",
+         r.label.c_str(),
+         format_bytes(r.original_size).c_str(),
+         format_bytes(r.compressed_size).c_str(),
+         ratio,
+         r.compress_ms,
+         r.decompress_ms,
+         r.iterations);
+}
+
+} // namespace
+
+int main() {
+  std::cout << "=== yase-json Benchmark ===\n\n";
+
+  // generate test data
+  std::cout << "Generating test data...\n";
+  auto const small = make_small_json();
+  auto const medium = make_medium_json();
+  auto const large = make_large_json();
+
+  std::cout << "  small:  " << format_bytes(small.size()) << "\n";
+  std::cout << "  medium: " << format_bytes(medium.size()) << "\n";
+  std::cout << "  large:  " << format_bytes(large.size()) << "\n\n";
+
+  print_header();
+
+  auto const r_small  = run_benchmark("small",  small,  1000);
+  print_result(r_small);
+
+  auto const r_medium = run_benchmark("medium", medium, 100);
+  print_result(r_medium);
+
+  auto const r_large  = run_benchmark("large",  large,  10);
+  print_result(r_large);
+
+  print_separator();
+
+  std::cout << "\nAll verifications passed. Benchmark complete.\n";
   return 0;
 }

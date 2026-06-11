@@ -12,6 +12,7 @@
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -329,23 +330,32 @@ auto build_initial_candidates(std::basic_string_view<CharT> const string, int64_
   // To avoid O(N*L) string creations, we can use RollingHash to find repeats quickly.
   // But to match official JSONCrush's tie-breaking/order, we iterate in order of encounter.
   RollingHash<CharT> const hasher(string);
-  std::unordered_map<uint64_t, std::vector<size_t>> buckets;
+  struct PairHash {
+    auto operator()(std::pair<uint64_t, size_t> const& p) const noexcept -> std::size_t {
+      auto seed = p.first;
+      seed ^= std::hash<size_t>{}(p.second)
+               + uint64_t{0x9e3779b9} + (seed << 6) + (seed >> 2);
+      return seed;
+    }
+  };
+  std::unordered_map<std::pair<uint64_t, size_t>,
+                     std::vector<size_t>, PairHash> buckets;
 
   for (size_t len = 2; len < static_cast<size_t>(max_len); ++len) {
     if (string.size() < len) break;
     for (size_t i = 0; i <= string.size() - len; ++i) {
-      buckets[hasher.slice(i, len)].push_back(i);
+      buckets[{hasher.slice(i, len), len}].push_back(i);
     }
   }
 
-  std::unordered_map<std::basic_string_view<CharT>, bool> processed;
+  std::unordered_set<std::basic_string_view<CharT>> processed;
   for (size_t i = 0; i < string.size(); ++i) {
     for (size_t len = 2; len < static_cast<size_t>(max_len) && i + len <= string.size(); ++len) {
       auto sub = string.substr(i, len);
       if (processed.count(sub)) continue;
 
-      uint64_t h = hasher.slice(i, len);
-      auto& positions = buckets[h];
+      auto const h = hasher.slice(i, len);
+      auto& positions = buckets[{h, len}];
 
       // Verify actual string match if hash matches multiple potential substrings
       if (positions.size() > 1 && positions[0] == i) {
@@ -360,7 +370,7 @@ auto build_initial_candidates(std::basic_string_view<CharT> const string, int64_
         if (count > 1) {
           candidates.push_back({std::basic_string<CharT>(sub), count, encoded_uri_length(std::u16string_view(reinterpret_cast<const char16_t*>(sub.data()), sub.size()))});
         }
-        processed[sub] = true;
+        processed.insert(sub);
       }
     }
   }

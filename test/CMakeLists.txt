@@ -6,10 +6,12 @@ add_executable(all_test main.cpp ${test_src})
 
 target_link_libraries(all_test PRIVATE Catch2::Catch2 Catch2::Catch2WithMain yase-json)
 target_include_directories(all_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR})
-target_compile_features(all_test PRIVATE ${STD_CPP})
+target_compile_features(all_test PRIVATE cxx_std_23)
 
 add_test(NAME all_test COMMAND all_test -r junit)
 
-add_executable(benchmark benchmark.cpp)
-target_link_libraries(benchmark PRIVATE yase-json)
-target_compile_features(benchmark PRIVATE ${STD_CPP})
+if(BUILD_BENCH)
+  add_executable(benchmark benchmark.cpp)
+  target_link_libraries(benchmark PRIVATE yase-json)
+  target_compile_features(benchmark PRIVATE cxx_std_23)
+endif()

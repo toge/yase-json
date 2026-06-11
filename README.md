@@ -110,6 +110,10 @@ int main() {
 }
 ```
 
+## ベンチマーク
+
+圧縮率・パフォーマンスの詳細は [BENCHMARK.md](BENCHMARK.md) を参照してください。
+
 ## ライセンス
 
 [MIT License](LICENSE)

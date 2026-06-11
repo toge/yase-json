@@ -17,6 +17,13 @@
 
 namespace yase_json::detail {
 
+struct string_hash {
+  using is_transparent = void;
+  auto operator()(std::string_view sv) const noexcept -> std::size_t {
+    return std::hash<std::string_view>{}(sv);
+  }
+};
+
 inline auto constexpr BASE62_CHARS = std::string_view{"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"};
 inline auto constexpr MAX_SAFE_INTEGER = std::string_view{"9007199254740991"};
 
@@ -73,10 +80,21 @@ inline auto split_preserving_empty(std::string_view value) -> std::vector<std::s
   return parts;
 }
 
+inline auto is_safe_integer_string(std::string_view digits) -> bool {
+  digits = strip_leading_zeroes(digits);
+  if (digits.size() != MAX_SAFE_INTEGER.size()) {
+    return digits.size() < MAX_SAFE_INTEGER.size();
+  }
+  return digits <= MAX_SAFE_INTEGER;
+}
+
 inline auto decimal_to_base62(std::string_view digits) -> std::string {
   digits = strip_leading_zeroes(digits);
   if (digits == "0") {
     return "0";
+  }
+  if (is_safe_integer_string(digits)) {
+    return to_base62(std::stoull(std::string{digits}));
   }
 
   auto current = std::string{digits};
@@ -139,14 +157,6 @@ inline auto base62_to_decimal(std::string_view encoded) -> std::string {
     add_decimal(digits, decode_table[static_cast<uint8_t>(ch)]);
   }
   return std::string{strip_leading_zeroes(digits)};
-}
-
-inline auto is_safe_integer_string(std::string_view digits) -> bool {
-  digits = strip_leading_zeroes(digits);
-  if (digits.size() != MAX_SAFE_INTEGER.size()) {
-    return digits.size() < MAX_SAFE_INTEGER.size();
-  }
-  return digits <= MAX_SAFE_INTEGER;
 }
 
 inline auto int_str_to_s(std::string_view digits) -> std::string {
@@ -288,11 +298,13 @@ inline auto encode_number(double value) -> std::string {
 
 struct CompressionMemory {
   std::vector<std::string> values{};
-  std::unordered_map<std::string, std::string> value_cache{};
-  std::unordered_map<std::string, std::string> schema_cache{};
+  std::unordered_map<std::string, std::string,
+                     string_hash, std::equal_to<>> value_cache{};
+  std::unordered_map<std::string, std::string,
+                     string_hash, std::equal_to<>> schema_cache{};
 
   auto get_value_key(std::string value) -> std::string {
-    if (auto const it = value_cache.find(value); it != value_cache.end()) {
+    if (auto const it = value_cache.find(std::string_view{value}); it != value_cache.end()) {
       return it->second;
     }
 
@@ -311,7 +323,7 @@ struct CompressionMemory {
       signature += keys[index];
     }
 
-    if (auto const it = schema_cache.find(signature); it != schema_cache.end()) {
+    if (auto const it = schema_cache.find(std::string_view{signature}); it != schema_cache.end()) {
       return it->second;
     }
 
