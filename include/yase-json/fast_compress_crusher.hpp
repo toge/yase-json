@@ -38,6 +38,17 @@ public:
   auto uncrush_decompress(std::string_view crushed) -> std::string;
 
   /**
+   * @brief 圧縮対象のフィールドを設定する
+   */
+  auto set_fields(std::vector<std::string> fields) -> void {
+    fast_crusher_.reset();
+    stable_count_ = 0;
+    last_compressed_.clear();
+    crusher_ready_ = false;
+    fast_compressor_.set_fields(std::move(fields));
+  }
+
+  /**
    * @brief 全キャッシュをリセットする
    */
   auto reset() noexcept -> void;
@@ -50,6 +61,15 @@ private:
   std::size_t    stable_count_{};
   std::string    last_compressed_{};
   bool           crusher_ready_{};
+};
+
+template<FixedString... Fields>
+class StaticFastCompressCrusher : public FastCompressCrusher {
+public:
+  explicit StaticFastCompressCrusher(std::size_t warmup_threshold = 2)
+    : FastCompressCrusher(warmup_threshold) {
+    set_fields({std::string(Fields)...});
+  }
 };
 
 // --- FastCompressCrusher 実装 ---
