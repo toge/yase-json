@@ -42,7 +42,7 @@ target_include_directories(yase-json INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
-
+target_compile_features(yase-json INTERFACE cxx_std_23)
 target_link_libraries(yase-json INTERFACE glaze::glaze)
 
 # --- Installer ---
