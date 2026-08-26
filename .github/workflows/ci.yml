@@ -276,8 +276,8 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
             -DVCPKG_TARGET_TRIPLET=wasm32-emscripten \
             -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake \
-            -DCMAKE_CXX_FLAGS="-sDISABLE_EXCEPTION_CATCHING=0 -sWASM_LEGACY_EXCEPTIONS=1" \
-            -DCMAKE_EXE_LINKER_FLAGS="-sDISABLE_EXCEPTION_CATCHING=0 -sWASM_LEGACY_EXCEPTIONS=1"
+            -DCMAKE_CXX_FLAGS="-sDISABLE_EXCEPTION_CATCHING=0 -sSTACK_SIZE=1MB" \
+            -DCMAKE_EXE_LINKER_FLAGS="-sDISABLE_EXCEPTION_CATCHING=0 -sSTACK_SIZE=1MB -sALLOW_MEMORY_GROWTH=1"
 
       - name: Build
         run: |
