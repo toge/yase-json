@@ -109,32 +109,7 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
     schema_snapshot_size_ = memory_.values.size();
     schema_cached_ = true;
 
-    // 出力构建
-    auto values = glz::generic::array_t{};
-    values.reserve(memory_.values.size());
-    for (auto const& value : memory_.values) {
-      auto node = glz::generic{};
-      node = value;
-      values.emplace_back(std::move(node));
-    }
-
-    auto result = glz::generic::array_t{};
-    auto values_node = glz::generic{};
-    values_node = std::move(values);
-    result.emplace_back(std::move(values_node));
-
-    auto root_node = glz::generic{};
-    root_node = root_key;
-    result.emplace_back(std::move(root_node));
-
-    auto final_node = glz::generic{};
-    final_node = std::move(result);
-
-    auto out = std::string{};
-    if (auto const ec = glz::write_json(final_node, out)) {
-      throw std::runtime_error("Failed to generate compressed JSON");
-    }
-    return out;
+    return detail::write_compressed(memory_.values, root_key);
   }
 
   // 2回目以降: スキーマは固定。値部分のみをエンコード
@@ -174,33 +149,7 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
     encoded += memory_.add_value(child);
   }
   auto const root_key = memory_.get_value_key(std::move(encoded));
-
-  // 出力构建
-  auto values = glz::generic::array_t{};
-  values.reserve(memory_.values.size());
-  for (auto const& value : memory_.values) {
-    auto node = glz::generic{};
-    node = value;
-    values.emplace_back(std::move(node));
-  }
-
-  auto result = glz::generic::array_t{};
-  auto values_node = glz::generic{};
-  values_node = std::move(values);
-  result.emplace_back(std::move(values_node));
-
-  auto root_node = glz::generic{};
-  root_node = root_key;
-  result.emplace_back(std::move(root_node));
-
-  auto final_node = glz::generic{};
-  final_node = std::move(result);
-
-  auto out = std::string{};
-  if (auto const ec = glz::write_json(final_node, out)) {
-    throw std::runtime_error("Failed to generate compressed JSON");
-  }
-  return out;
+  return detail::write_compressed(memory_.values, root_key);
 }
 
 inline auto FastCompressor::reset() noexcept -> void {
@@ -394,8 +343,13 @@ inline auto FastCrusher::apply_dictionary(std::u16string string) const -> std::s
   // split 文字列を構築（先頭に挿入する順序で作成）
   auto split_string = std::u16string{};
 
-  // 辞書の各エントリを順に適用
+  // 辞書の各エントリを順に適用。置換文字が入力に自然に含まれる場合は
+  // uncrush の区切り文字と衝突して復元が破損するため、そのエントリをスキップする
+  // ponytail: per-entry skip keeps correctness; full fallback if throughput matters
   for (auto const& entry : dictionary_) {
+    if (string.find(entry.replacement_char) != std::u16string::npos) {
+      continue;
+    }
     string = detail::replace_all_with_char<char16_t>(
       std::u16string_view{string}, entry.pattern, entry.replacement_char
     );

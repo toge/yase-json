@@ -23,16 +23,16 @@ int main() {
 
   yase_json::Compressor compressor;
   std::string compressed = compressor.compress(json_str);
-  std::cout << "Compressed: " << compressed << std::endl;
+  std::cout << "Compressed: " << compressed << '\n';
 
   yase_json::Decompressor decompressor;
   std::string decompressed = decompressor.decompress(compressed);
-  std::cout << "Decompressed: " << decompressed << std::endl;
+  std::cout << "Decompressed: " << decompressed << '\n';
 
   auto crushed = yase_json::crush(json_str);
-  std::cout << "Crushed: " << crushed << std::endl;
+  std::cout << "Crushed: " << crushed << '\n';
   auto uncrushed = yase_json::uncrush(crushed);
-  std::cout << "Uncrushed: " << uncrushed << std::endl;
+  std::cout << "Uncrushed: " << uncrushed << '\n';
 
   return 0;
 }

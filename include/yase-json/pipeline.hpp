@@ -1,5 +1,4 @@
-#ifndef YASE_JSON_PIPELINE_HPP
-#define YASE_JSON_PIPELINE_HPP
+#pragma once
 
 #include <iterator>
 #include <string>
@@ -75,5 +74,3 @@ inline auto uncrush_and_decompress(std::string_view input, OutputIt out) -> Outp
 }
 
 } // namespace yase_json::pipeline
-
-#endif // YASE_JSON_PIPELINE_HPP

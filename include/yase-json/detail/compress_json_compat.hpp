@@ -1,5 +1,4 @@
-#ifndef __YASE_JSON_COMPRESS_JSON_COMPAT_HPP__
-#define __YASE_JSON_COMPRESS_JSON_COMPAT_HPP__
+#pragma once
 
 #include <algorithm>
 #include <array>
@@ -185,6 +184,7 @@ inline auto encode_string(std::string_view value) -> std::string {
       case 'a':
       case 'b':
       case 'n':
+      case 'N':
       case 'o':
       case 's':
         return "s|" + std::string{value};
@@ -341,7 +341,10 @@ struct CompressionMemory {
     return schema_key;
   }
 
-  auto add_value(glz::generic const& value, bool array_element = false) -> std::string {
+  auto add_value(glz::generic const& value, bool array_element = false, size_t depth = 0) -> std::string {
+    if (depth > 512) {
+      throw std::runtime_error("Compression depth limit exceeded");
+    }
     if (value.is_null()) {
       return array_element ? "_" : "";
     }
@@ -364,7 +367,7 @@ struct CompressionMemory {
       for (auto const& [key, child] : object) {
         std::ignore = key;
         encoded.push_back('|');
-        encoded += add_value(child);
+        encoded += add_value(child, false, depth + 1);
       }
       return get_value_key(std::move(encoded));
     }
@@ -373,7 +376,7 @@ struct CompressionMemory {
       auto encoded = std::string{"a"};
       for (auto const& child : value.get<glz::generic::array_t>()) {
         encoded.push_back('|');
-        encoded += child.is_null() ? "_" : add_value(child, true);
+        encoded += child.is_null() ? "_" : add_value(child, true, depth + 1);
       }
       if (encoded == "a") {
         encoded = "a|";
@@ -397,6 +400,29 @@ struct CompressionMemory {
   }
 };
 
-} // namespace yase_json::detail
+// 3箇所で重複していた圧縮結果のシリアライズを集約
+inline auto write_compressed(std::vector<std::string> const& values, std::string const& root_key) -> std::string {
+  auto vals = glz::generic::array_t{};
+  vals.reserve(values.size());
+  for (auto const& v : values) {
+    auto node = glz::generic{};
+    node = v;
+    vals.emplace_back(std::move(node));
+  }
+  auto result = glz::generic::array_t{};
+  auto values_node = glz::generic{};
+  values_node = std::move(vals);
+  result.emplace_back(std::move(values_node));
+  auto root_node = glz::generic{};
+  root_node = root_key;
+  result.emplace_back(std::move(root_node));
+  auto final_node = glz::generic{};
+  final_node = std::move(result);
+  auto out = std::string{};
+  if (auto const ec = glz::write_json(final_node, out)) {
+    throw std::runtime_error("Failed to generate compressed JSON");
+  }
+  return out;
+}
 
-#endif // __YASE_JSON_COMPRESS_JSON_COMPAT_HPP__
+} // namespace yase_json::detail

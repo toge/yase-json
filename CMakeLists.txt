@@ -87,6 +87,12 @@ if(BUILD_TEST)
     add_subdirectory(test)
 endif()
 
+if(BUILD_BENCH)
+    add_executable(benchmark test/benchmark.cpp)
+    target_link_libraries(benchmark PRIVATE yase-json::yase-json)
+    target_compile_features(benchmark PRIVATE cxx_std_23)
+endif()
+
 if(BUILD_EXAMPLE)
     add_executable(example example.cpp)
     target_link_libraries(example PRIVATE yase-json::yase-json)

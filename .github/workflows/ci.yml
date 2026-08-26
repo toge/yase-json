@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   linux-gcc:
     runs-on: ubuntu-latest
@@ -48,13 +52,55 @@ jobs:
         run: |
           if [ ! -d ~/vcpkg ]; then
             git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
-            ~/vcpkg/bootstrap-vcpkg.sh
           fi
+          git -C ~/vcpkg fetch --tags
+          git -C ~/vcpkg checkout 2026.02.27
+          ~/vcpkg/bootstrap-vcpkg.sh
 
       - name: Configure
         run: |
           cmake -B build -S . -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build -V
+
+  sanitizer:
+    runs-on: ubuntu-latest
+    container: fedora:44
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: dnf install -y gcc-c++ cmake ninja-build git curl zip unzip tar
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/vcpkg
+            build/vcpkg_installed
+          key: sanitizer-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            sanitizer-vcpkg-
+
+      - name: Install vcpkg
+        run: |
+          if [ ! -d ~/vcpkg ]; then
+            git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+          fi
+          git -C ~/vcpkg fetch --tags
+          git -C ~/vcpkg checkout 2026.02.27
+          ~/vcpkg/bootstrap-vcpkg.sh
+
+      - name: Configure
+        run: |
+          cmake -B build -S . -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -g"
 
       - name: Build
         run: cmake --build build
@@ -82,8 +128,10 @@ jobs:
         run: |
           if not exist C:\vcpkg (
             git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
-            call C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
           )
+          git -C C:\vcpkg fetch --tags
+          git -C C:\vcpkg checkout 2026.02.27
+          call C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
         shell: cmd
 
       - name: Configure
@@ -132,8 +180,10 @@ jobs:
         run: |
           if [ ! -d ~/vcpkg ]; then
             git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
-            ~/vcpkg/bootstrap-vcpkg.sh
           fi
+          git -C ~/vcpkg fetch --tags
+          git -C ~/vcpkg checkout 2026.02.27
+          ~/vcpkg/bootstrap-vcpkg.sh
 
       - name: Configure
         run: |
@@ -174,8 +224,10 @@ jobs:
         run: |
           if [ ! -d ~/vcpkg ]; then
             git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
-            ~/vcpkg/bootstrap-vcpkg.sh
           fi
+          git -C ~/vcpkg fetch --tags
+          git -C ~/vcpkg checkout 2026.02.27
+          ~/vcpkg/bootstrap-vcpkg.sh
 
       - name: Configure
         run: cmake -B build -S . -G Ninja -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake
@@ -212,8 +264,10 @@ jobs:
         run: |
           if [ ! -d ~/vcpkg ]; then
             git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
-            ~/vcpkg/bootstrap-vcpkg.sh
           fi
+          git -C ~/vcpkg fetch --tags
+          git -C ~/vcpkg checkout 2026.02.27
+          ~/vcpkg/bootstrap-vcpkg.sh
 
       - name: Configure
         run: |

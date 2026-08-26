@@ -126,3 +126,64 @@ TEST_CASE("Compressor matches compress-json format", "[compression][compatibilit
     REQUIRE(original_out == decompressed_out);
   }
 }
+
+TEST_CASE("Strings with special prefix survive round-trip (Bug A regression)", "[compression][regression]") {
+  yase_json::Compressor compressor;
+  yase_json::Decompressor decompressor;
+
+  auto test_string_value = [&](std::string_view payload) {
+    // payload is a JSON string value that looks like internal encoding
+    auto json = std::string{"\""} + std::string{payload} + "\"";
+    auto compressed = compressor.compress(json);
+    auto decompressed = decompressor.decompress(compressed);
+    glz::generic orig, decomp;
+    REQUIRE(glz::read_json(orig, json) == 0);
+    REQUIRE(glz::read_json(decomp, decompressed) == 0);
+    std::string o, d;
+    REQUIRE(glz::write_json(orig, o) == 0);
+    REQUIRE(glz::write_json(decomp, d) == 0);
+    REQUIRE(o == d);
+  };
+
+  SECTION("N| prefix strings") {
+    test_string_value("N|+");
+    test_string_value("N|-");
+    test_string_value("N|0");
+    test_string_value("N|x");
+    test_string_value("N|hello");
+  }
+
+  SECTION("other encoded-like prefixes") {
+    test_string_value("a|foo");
+    test_string_value("b|T");
+    test_string_value("n|123");
+    test_string_value("o|bar");
+    test_string_value("s|baz");
+  }
+
+  SECTION("object containing N| string values") {
+    auto json = R"({"k":"N|+","k2":"N|x"})";
+    auto compressed = compressor.compress(json);
+    auto decompressed = decompressor.decompress(compressed);
+    glz::generic o, d;
+    REQUIRE(glz::read_json(o, json) == 0);
+    REQUIRE(glz::read_json(d, decompressed) == 0);
+    std::string os, ds;
+    REQUIRE(glz::write_json(o, os) == 0);
+    REQUIRE(glz::write_json(d, ds) == 0);
+    REQUIRE(os == ds);
+  }
+
+  SECTION("free function API round-trip") {
+    auto json = R"({"x":"N|+"})";
+    auto compressed = yase_json::compress(json);
+    auto decompressed = yase_json::decompress(compressed);
+    glz::generic o, d;
+    REQUIRE(glz::read_json(o, json) == 0);
+    REQUIRE(glz::read_json(d, decompressed) == 0);
+    std::string os, ds;
+    REQUIRE(glz::write_json(o, os) == 0);
+    REQUIRE(glz::write_json(d, ds) == 0);
+    REQUIRE(os == ds);
+  }
+}

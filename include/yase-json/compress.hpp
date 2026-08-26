@@ -1,5 +1,4 @@
-#ifndef __YASE_JSON_COMPRESS_HPP__
-#define __YASE_JSON_COMPRESS_HPP__
+#pragma once
 
 #include <stdexcept>
 #include <string>
@@ -21,35 +20,12 @@ public:
 
     auto memory = detail::CompressionMemory{};
     auto const root_key = memory.add_value(data);
-
-    auto values = glz::generic::array_t{};
-    values.reserve(memory.values.size());
-    for (auto const& value : memory.values) {
-      auto node = glz::generic{};
-      node = value;
-      values.emplace_back(std::move(node));
-    }
-
-    auto result = glz::generic::array_t{};
-    auto values_node = glz::generic{};
-    values_node = std::move(values);
-    result.emplace_back(std::move(values_node));
-
-    auto root_node = glz::generic{};
-    root_node = root_key;
-    result.emplace_back(std::move(root_node));
-
-    auto final_node = glz::generic{};
-    final_node = std::move(result);
-
-    auto out = std::string{};
-    if (auto const ec = glz::write_json(final_node, out)) {
-      throw std::runtime_error("Failed to generate compressed JSON");
-    }
-    return out;
+    return detail::write_compressed(memory.values, root_key);
   }
 };
 
-} // namespace yase_json
+[[nodiscard]] inline auto compress(std::string_view json_str) -> std::string {
+  return Compressor{}.compress(json_str);
+}
 
-#endif // __YASE_JSON_COMPRESS_HPP__
+} // namespace yase_json

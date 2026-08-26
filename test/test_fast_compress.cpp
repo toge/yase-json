@@ -139,6 +139,38 @@ TEST_CASE("FastCrusher の基本動作", "[fast_crush]") {
   }
 }
 
+TEST_CASE("FastCrusher dictionary collision handling (Bug B regression)", "[fast_crush][regression]") {
+  yase_json::FastCrusher crusher;
+
+  SECTION("置換文字が後続入力に含まれる場合でも復元が壊れない") {
+    auto const template_json = R"({"key_0":1.0,"key_1":2.0,"key_2":3.0,"key_3":4.0})";
+    crusher.warm_up(template_json);
+
+    // 辞書の置換文字は 0x20-0xFE から選ばれる。ASCII範囲の置換文字が
+    // 後続入力に含まれると以前は復元が破損した。per-entry skip により
+    // 正しく復元されることを検証(有効なUTF-8のみを使用)
+    std::string many_chars = R"({"k":")";
+    for (int c = 0x20; c < 0x7F; ++c) {
+      if (c == '"' || c == '\\') continue;
+      many_chars.push_back(static_cast<char>(c));
+    }
+    many_chars += "\"}";
+    auto const crushed = crusher.crush(many_chars);
+    auto const uncrushed = yase_json::uncrush(crushed);
+    verify_json_equal(many_chars, uncrushed);
+    // crusher.uncrush も同一
+    verify_json_equal(many_chars, crusher.uncrush(crushed));
+  }
+
+  SECTION("ASCIIのみの入力では従来通り圧縮・復元できる") {
+    crusher.warm_up(R"({"a":1.0,"b":2.0})");
+    auto const input = R"({"a":10.0,"b":20.0})";
+    auto const crushed = crusher.crush(input);
+    verify_json_equal(input, yase_json::uncrush(crushed));
+    verify_json_equal(input, crusher.uncrush(crushed));
+  }
+}
+
 TEST_CASE("FastCompressor schema_cache 整合性", "[fast_compress]") {
   yase_json::FastCompressor compressor;
   yase_json::Decompressor decompressor;

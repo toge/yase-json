@@ -1,5 +1,4 @@
-#ifndef __YASE_JSON_DECOMPRESS_HPP__
-#define __YASE_JSON_DECOMPRESS_HPP__
+#pragma once
 
 #include <stdexcept>
 #include <string>
@@ -35,8 +34,8 @@ public:
       throw std::runtime_error("Root key must be a string");
     }
 
-    values_ = &root[0].get<glz::generic::array_t>();
-    auto const result = decode(root[1].get<std::string>());
+    auto const& values = root[0].get<glz::generic::array_t>();
+    auto const result = decode(root[1].get<std::string>(), values, 0);
 
     auto out = std::string{};
     if (auto const ec = glz::write_json(result, out)) {
@@ -46,21 +45,29 @@ public:
   }
 
 private:
-  glz::generic::array_t const* values_ = nullptr;
+  static constexpr size_t kMaxDepth = 512;
 
-  auto decode(std::string_view key) const -> glz::generic {
+  template <typename T>
+  static auto make_node(T&& v) -> glz::generic {
+    auto node = glz::generic{};
+    node = std::forward<T>(v);
+    return node;
+  }
+
+  auto decode(std::string_view key, glz::generic::array_t const& values, size_t depth) const -> glz::generic {
+    if (depth > kMaxDepth) {
+      throw std::runtime_error("Decompression depth limit exceeded");
+    }
     if (key.empty() || key == "_") {
-      auto node = glz::generic{};
-      node = nullptr;
-      return node;
+      return make_node(nullptr);
     }
 
     auto const index = detail::from_base62(key);
-    if (index >= values_->size()) {
+    if (index >= values.size()) {
       throw std::out_of_range("Value key out of range");
     }
 
-    auto const& encoded_node = values_->at(index);
+    auto const& encoded_node = values.at(index);
     if (!encoded_node.is_string()) {
       throw std::runtime_error("Encoded value must be a string");
     }
@@ -69,7 +76,7 @@ private:
     if (encoded.size() > 1 && encoded[1] == '|') {
       switch (encoded[0]) {
         case 'a':
-          return decode_array(encoded);
+          return decode_array(encoded, values, depth + 1);
         case 'b':
           return decode_bool(encoded);
         case 'n':
@@ -77,84 +84,68 @@ private:
         case 'N':
           return decode_special_number(encoded);
         case 'o':
-          return decode_object(encoded);
-        case 's': {
-          auto node = glz::generic{};
-          node = encoded.substr(2);
-          return node;
-        }
+          return decode_object(encoded, values, depth + 1);
+        case 's':
+          return make_node(encoded.substr(2));
         default:
           break;
       }
     }
 
-    auto node = glz::generic{};
-    node = encoded;
-    return node;
+    return make_node(encoded);
   }
 
-  auto decode_array(std::string_view encoded) const -> glz::generic {
-    auto array = glz::generic::array_t{};
+  auto decode_array(std::string_view encoded, glz::generic::array_t const& values, size_t depth) const -> glz::generic {
+    if (depth > kMaxDepth) {
+      throw std::runtime_error("Decompression depth limit exceeded");
+    }
     if (encoded == "a|") {
-      auto node = glz::generic{};
-      node = std::move(array);
-      return node;
+      return make_node(glz::generic::array_t{});
     }
 
     auto const parts = detail::split_preserving_empty(encoded);
+    auto array = glz::generic::array_t{};
     array.reserve(parts.size() - 1);
     for (auto const index : std::views::iota(size_t{1}, parts.size())) {
-      array.emplace_back(decode(parts[index]));
+      array.emplace_back(decode(parts[index], values, depth));
     }
 
-    auto node = glz::generic{};
-    node = std::move(array);
-    return node;
+    return make_node(std::move(array));
   }
 
   auto decode_bool(std::string_view encoded) const -> glz::generic {
     if (encoded == "b|T") {
-      auto node = glz::generic{};
-      node = true;
-      return node;
+      return make_node(true);
     }
     if (encoded == "b|F") {
-      auto node = glz::generic{};
-      node = false;
-      return node;
+      return make_node(false);
     }
     throw std::runtime_error("Unknown boolean encoding");
   }
 
   auto decode_number(std::string_view encoded) const -> glz::generic {
-    auto node = glz::generic{};
-    node = detail::s_to_num(encoded.substr(2));
-    return node;
+    return make_node(detail::s_to_num(encoded.substr(2)));
   }
 
   auto decode_special_number(std::string_view encoded) const -> glz::generic {
-    auto node = glz::generic{};
     switch (encoded.size() > 2 ? encoded[2] : '\0') {
       case '+':
-        node = std::numeric_limits<double>::infinity();
-        return node;
+        return make_node(std::numeric_limits<double>::infinity());
       case '-':
-        node = -std::numeric_limits<double>::infinity();
-        return node;
+        return make_node(-std::numeric_limits<double>::infinity());
       case '0':
-        node = std::numeric_limits<double>::quiet_NaN();
-        return node;
+        return make_node(std::numeric_limits<double>::quiet_NaN());
       default:
         throw std::runtime_error("Unknown special number encoding");
     }
   }
 
-  auto decode_object(std::string_view encoded) const -> glz::generic {
-    auto object = glz::generic::object_t{};
+  auto decode_object(std::string_view encoded, glz::generic::array_t const& values, size_t depth) const -> glz::generic {
+    if (depth > kMaxDepth) {
+      throw std::runtime_error("Decompression depth limit exceeded");
+    }
     if (encoded == "o|") {
-      auto node = glz::generic{};
-      node = std::move(object);
-      return node;
+      return make_node(glz::generic::object_t{});
     }
 
     auto const parts = detail::split_preserving_empty(encoded);
@@ -162,7 +153,7 @@ private:
       throw std::runtime_error("Object encoding is malformed");
     }
 
-    auto const decoded_keys = decode(parts[1]);
+    auto const decoded_keys = decode(parts[1], values, depth);
     auto keys = std::vector<std::string>{};
     if (decoded_keys.is_array()) {
       auto const& key_array = decoded_keys.get<glz::generic::array_t>();
@@ -183,16 +174,18 @@ private:
       throw std::runtime_error("Object key/value count mismatch");
     }
 
+    auto object = glz::generic::object_t{};
     for (auto const index : std::views::iota(size_t{0}, keys.size())) {
-      object.emplace(keys[index], decode(parts[index + 2]));
+      object.emplace(keys[index], decode(parts[index + 2], values, depth));
     }
 
-    auto node = glz::generic{};
-    node = std::move(object);
-    return node;
+    return make_node(std::move(object));
   }
 };
 
-} // namespace yase_json
+// 自由関数版 — クラスと等価だが状態を持たない
+[[nodiscard]] inline auto decompress(std::string_view compressed_json_str) -> std::string {
+  return Decompressor{}.decompress(compressed_json_str);
+}
 
-#endif // __YASE_JSON_DECOMPRESS_HPP__
+} // namespace yase_json

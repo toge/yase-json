@@ -1,5 +1,4 @@
-#ifndef __YASE_JSON_CRUSH_HPP__
-#define __YASE_JSON_CRUSH_HPP__
+#pragma once
 
 #include <algorithm>
 #include <array>
@@ -504,5 +503,3 @@ inline auto uncrush(std::string_view input, OutputIt out) -> OutputIt {
 }
 
 } // namespace yase_json
-
-#endif // __YASE_JSON_CRUSH_HPP__
