@@ -367,7 +367,7 @@ auto build_initial_candidates(std::basic_string_view<CharT> const string, int64_
         int64_t count = greedy_non_overlapping_count(positions, len);
 
         if (count > 1) {
-          candidates.push_back({std::basic_string<CharT>(sub), count, encoded_uri_length(std::u16string_view(reinterpret_cast<const char16_t*>(sub.data()), sub.size()))});
+          candidates.push_back({std::basic_string<CharT>(sub), count, encoded_uri_length(std::u16string_view(sub.data(), sub.size()))});
         }
         processed.insert(sub);
       }
@@ -391,31 +391,42 @@ auto count_candidates(std::basic_string_view<CharT> const string, std::vector<Or
   candidates.erase(std::remove_if(candidates.begin(), candidates.end(), [](auto const& c) { return c.count <= 1; }), candidates.end());
 }
 
-auto const js_crush_utf16 = [](std::u16string string, int64_t const max_len = 50) {
-  std::u16string split_string;
+template <typename OnReplacement>
+auto run_greedy_loop(std::u16string string, int64_t const max_len, OnReplacement&& on_replacement)
+  -> JSCrushResult<char16_t> {
+  auto split_string = std::u16string{};
   auto candidates = build_initial_candidates<char16_t>(string, max_len);
-  int replace_pos = replacement_characters_utf16.size();
+  auto replace_pos = static_cast<int>(replacement_characters_utf16.size());
 
   while (true) {
     std::bitset<65536> present;
-    for (auto c : string) present.set(static_cast<uint16_t>(c));
-
-    char16_t replace_char = 0;
-    while (replace_pos > 0) {
-      char16_t c = replacement_characters_utf16[--replace_pos];
-      if (!present.test(static_cast<uint16_t>(c))) { replace_char = c; break; }
+    for (auto const c : string) {
+      present.set(static_cast<uint16_t>(c));
     }
-    if (replace_char == 0) break;
 
-    size_t best_idx = 0; int64_t best_delta = 0;
-    int64_t rep_len = encoded_uri_length(std::u16string_view{&replace_char, 1});
-    int64_t delim_len = encoded_uri_length(std::u16string_view{&JSON_CRUSH_DELIMITER, 1});
+    auto replace_char = char16_t{0};
+    while (replace_pos > 0) {
+      auto const c = replacement_characters_utf16[--replace_pos];
+      if (!present.test(static_cast<uint16_t>(c))) {
+        replace_char = c;
+        break;
+      }
+    }
+    if (replace_char == 0) {
+      break;
+    }
+
+    auto best_idx = size_t{0};
+    auto best_delta = int64_t{0};
+    auto const rep_len = encoded_uri_length(std::u16string_view{&replace_char, 1});
+    auto const delim_len = encoded_uri_length(std::u16string_view{&JSON_CRUSH_DELIMITER, 1});
 
     auto it = candidates.begin();
     while (it != candidates.end()) {
-      int64_t delta = (it->count - 1) * it->encoded_length - (it->count + 1) * rep_len;
-      if (split_string.empty()) delta -= delim_len;
-      
+      auto delta = (it->count - 1) * it->encoded_length - (it->count + 1) * rep_len;
+      if (split_string.empty()) {
+        delta -= delim_len;
+      }
       if (delta <= 0) {
         it = candidates.erase(it);
       } else {
@@ -426,18 +437,24 @@ auto const js_crush_utf16 = [](std::u16string string, int64_t const max_len = 50
         ++it;
       }
     }
-    if (best_delta <= 0 || candidates.empty()) break;
+    if (best_delta <= 0 || candidates.empty()) {
+      break;
+    }
 
-    auto const best_sub = candidates[best_idx].value;
+    auto const& best_sub = candidates[best_idx].value;
+    on_replacement(best_sub, replace_char);
     string = replace_all_with_char<char16_t>(string, best_sub, replace_char);
-    string.push_back(replace_char); string.append(best_sub);
+    string.push_back(replace_char);
+    string.append(best_sub);
     split_string.insert(split_string.begin(), replace_char);
 
-    std::vector<OrderedCandidate<char16_t>> next_cands;
-    std::unordered_map<std::u16string, size_t> seen;
+    auto next_cands = std::vector<OrderedCandidate<char16_t>>{};
+    auto seen = std::unordered_map<std::u16string, size_t>{};
     for (auto& c : candidates) {
       auto rewritten = replace_all_with_char<char16_t>(c.value, best_sub, replace_char);
-      if (rewritten.size() < 2) continue;
+      if (rewritten.size() < 2) {
+        continue;
+      }
       if (!seen.count(rewritten)) {
         seen[rewritten] = next_cands.size();
         next_cands.push_back({rewritten, 0, encoded_uri_length(rewritten)});
@@ -446,7 +463,11 @@ auto const js_crush_utf16 = [](std::u16string string, int64_t const max_len = 50
     candidates = std::move(next_cands);
     count_candidates<char16_t>(string, candidates);
   }
-  return JSCrushResult<char16_t>{std::move(string), std::move(split_string)};
+  return {std::move(string), std::move(split_string)};
+}
+
+auto const js_crush_utf16 = [](std::u16string string, int64_t const max_len = 50) {
+  return run_greedy_loop(std::move(string), max_len, [](std::u16string const&, char16_t) {});
 };
 
 } // namespace detail

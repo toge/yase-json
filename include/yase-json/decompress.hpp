@@ -45,8 +45,6 @@ public:
   }
 
 private:
-  static constexpr size_t kMaxDepth = 512;
-
   template <typename T>
   static auto make_node(T&& v) -> glz::generic {
     auto node = glz::generic{};
@@ -55,7 +53,7 @@ private:
   }
 
   auto decode(std::string_view key, glz::generic::array_t const& values, size_t depth) const -> glz::generic {
-    if (depth > kMaxDepth) {
+    if (depth > detail::kMaxDepth) {
       throw std::runtime_error("Decompression depth limit exceeded");
     }
     if (key.empty() || key == "_") {
@@ -96,9 +94,6 @@ private:
   }
 
   auto decode_array(std::string_view encoded, glz::generic::array_t const& values, size_t depth) const -> glz::generic {
-    if (depth > kMaxDepth) {
-      throw std::runtime_error("Decompression depth limit exceeded");
-    }
     if (encoded == "a|") {
       return make_node(glz::generic::array_t{});
     }
@@ -141,9 +136,6 @@ private:
   }
 
   auto decode_object(std::string_view encoded, glz::generic::array_t const& values, size_t depth) const -> glz::generic {
-    if (depth > kMaxDepth) {
-      throw std::runtime_error("Decompression depth limit exceeded");
-    }
     if (encoded == "o|") {
       return make_node(glz::generic::object_t{});
     }

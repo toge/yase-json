@@ -25,12 +25,22 @@ struct string_hash {
 
 inline auto constexpr BASE62_CHARS = std::string_view{"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"};
 inline auto constexpr MAX_SAFE_INTEGER = std::string_view{"9007199254740991"};
+inline constexpr auto kMaxDepth = size_t{512};
 
 inline auto constexpr decode_table = [] {
   auto table = std::array<uint8_t, 256>{};
   table.fill(0);
   for (auto const i : std::views::iota(size_t{0}, BASE62_CHARS.size())) {
     table[static_cast<uint8_t>(BASE62_CHARS[i])] = static_cast<uint8_t>(i);
+  }
+  return table;
+}();
+
+inline auto constexpr valid_table = [] {
+  auto table = std::array<bool, 256>{};
+  table.fill(false);
+  for (auto const c : BASE62_CHARS) {
+    table[static_cast<uint8_t>(c)] = true;
   }
   return table;
 }();
@@ -59,6 +69,9 @@ inline auto to_base62(uint64_t value) -> std::string {
 inline auto from_base62(std::string_view encoded) -> uint64_t {
   auto value = uint64_t{0};
   for (auto const ch : encoded) {
+    if (!valid_table[static_cast<uint8_t>(ch)]) {
+      throw std::invalid_argument(std::string{"Invalid base62 character: "} + ch);
+    }
     value = value * 62 + decode_table[static_cast<uint8_t>(ch)];
   }
   return value;
@@ -127,9 +140,14 @@ inline auto multiply_decimal(std::string& digits, uint32_t factor) -> void {
     digits[index] = static_cast<char>('0' + (value % 10));
     carry = value / 10;
   }
-  while (carry > 0) {
-    digits.insert(digits.begin(), static_cast<char>('0' + (carry % 10)));
-    carry /= 10;
+  if (carry > 0) {
+    auto prefix = std::string{};
+    while (carry > 0) {
+      prefix.push_back(static_cast<char>('0' + (carry % 10)));
+      carry /= 10;
+    }
+    std::ranges::reverse(prefix);
+    digits.insert(0, prefix);
   }
 }
 
@@ -143,9 +161,14 @@ inline auto add_decimal(std::string& digits, uint32_t addend) -> void {
     digits[index] = static_cast<char>('0' + (value % 10));
     carry = value / 10;
   }
-  while (carry > 0) {
-    digits.insert(digits.begin(), static_cast<char>('0' + (carry % 10)));
-    carry /= 10;
+  if (carry > 0) {
+    auto prefix = std::string{};
+    while (carry > 0) {
+      prefix.push_back(static_cast<char>('0' + (carry % 10)));
+      carry /= 10;
+    }
+    std::ranges::reverse(prefix);
+    digits.insert(0, prefix);
   }
 }
 
@@ -342,7 +365,7 @@ struct CompressionMemory {
   }
 
   auto add_value(glz::generic const& value, bool array_element = false, size_t depth = 0) -> std::string {
-    if (depth > 512) {
+    if (depth > kMaxDepth) {
       throw std::runtime_error("Compression depth limit exceeded");
     }
     if (value.is_null()) {

@@ -246,7 +246,6 @@ inline auto FastCrusher::reset() noexcept -> void {
 }
 
 inline auto FastCrusher::build_dictionary(std::string_view template_json) -> void {
-  // 通常の crush と同じ前処理
   auto string = detail::utf8_to_utf16(template_json);
   string.erase(
     std::remove(string.begin(), string.end(), detail::JSON_CRUSH_DELIMITER),
@@ -254,88 +253,12 @@ inline auto FastCrusher::build_dictionary(std::string_view template_json) -> voi
   );
   string = detail::json_crush_swap(string);
 
-  // js_crush_utf16 と同一の greedy ループで辞書を構築
-  auto split_string = std::u16string{};
-  auto candidates = detail::build_initial_candidates<char16_t>(string, 50);
-  auto replace_pos = static_cast<int64_t>(detail::replacement_characters_utf16.size());
-
-  while (true) {
-    // 現在の文字列に出現する文字をセット
-    std::bitset<65536> present;
-    for (auto const c : string) {
-      present.set(static_cast<uint16_t>(c));
+  std::ignore = detail::run_greedy_loop(
+    std::move(string), 50,
+    [this](std::u16string const& pattern, char16_t const replace_char) {
+      dictionary_.push_back({pattern, replace_char});
     }
-
-    // 未使用の置換文字を探す
-    auto replace_char = char16_t{0};
-    while (replace_pos > 0) {
-      auto const c = detail::replacement_characters_utf16[--replace_pos];
-      if (!present.test(static_cast<uint16_t>(c))) {
-        replace_char = c;
-        break;
-      }
-    }
-    if (replace_char == 0) {
-      break;
-    }
-
-    // 最適な候補を選択
-    auto best_idx = size_t{0};
-    auto best_delta = int64_t{0};
-    auto const rep_len = detail::encoded_uri_length(std::u16string_view{&replace_char, 1});
-    auto const delim_len = detail::encoded_uri_length(
-      std::u16string_view{&detail::JSON_CRUSH_DELIMITER, 1}
-    );
-
-    auto it = candidates.begin();
-    while (it != candidates.end()) {
-      auto delta = (it->count - 1) * it->encoded_length - (it->count + 1) * rep_len;
-      if (split_string.empty()) {
-        delta -= delim_len;
-      }
-
-      if (delta <= 0) {
-        it = candidates.erase(it);
-      }
-      else {
-        if (delta > best_delta) {
-          best_delta = delta;
-          best_idx = std::distance(candidates.begin(), it);
-        }
-        ++it;
-      }
-    }
-    if (best_delta <= 0 || candidates.empty()) {
-      break;
-    }
-
-    // 選択されたパターンを辞書に記録
-    auto const best_sub = candidates[best_idx].value;
-    dictionary_.push_back({best_sub, replace_char});
-
-    // 文字列を置換
-    string = detail::replace_all_with_char<char16_t>(string, best_sub, replace_char);
-    string.push_back(replace_char);
-    string.append(best_sub);
-    split_string.insert(split_string.begin(), replace_char);
-
-    // 候補リストを再構築
-    std::vector<detail::OrderedCandidate<char16_t>> next_cands;
-    std::unordered_map<std::u16string, size_t> seen;
-    for (auto& c : candidates) {
-      auto rewritten = detail::replace_all_with_char<char16_t>(c.value, best_sub, replace_char);
-      if (rewritten.size() < 2) {
-        continue;
-      }
-      if (!seen.count(rewritten)) {
-        seen[rewritten] = next_cands.size();
-        next_cands.push_back({rewritten, 0, detail::encoded_uri_length(rewritten)});
-      }
-    }
-    candidates = std::move(next_cands);
-    detail::count_candidates<char16_t>(string, candidates);
-  }
-
+  );
   dictionary_built_ = true;
 }
 
