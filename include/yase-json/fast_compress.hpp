@@ -97,7 +97,7 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
   // 初回、またはキー集合が変化した場合
   if (!schema_cached_ || !keys_match_schema(object)) {
     reset();
-    auto const root_key = memory_.add_value(data);
+    auto const root_key = detail::unwrap(memory_.add_value(data));
 
     // スキーマ関連のエントリをキャッシュ
     cached_keys_.clear();
@@ -109,7 +109,7 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
     schema_snapshot_size_ = memory_.values.size();
     schema_cached_ = true;
 
-    return detail::write_compressed(memory_.values, root_key);
+    return detail::unwrap(detail::write_compressed(memory_.values, root_key));
   }
 
   // 2回目以降: スキーマは固定。値部分のみをエンコード
@@ -118,7 +118,7 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
   // value_cache からスナップショット以降のエントリを除去
   auto& cache = memory_.value_cache;
   for (auto it = cache.begin(); it != cache.end();) {
-    if (detail::from_base62(it->second) >= schema_snapshot_size_) {
+    if (detail::unwrap(detail::from_base62(it->second)) >= schema_snapshot_size_) {
       it = cache.erase(it);
     }
     else {
@@ -135,7 +135,7 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
   // ただし不変条件として assert を追加する:
 #ifndef NDEBUG
   for (auto const& [sig, key] : memory_.schema_cache) {
-    assert(detail::from_base62(key) < schema_snapshot_size_
+    assert(detail::unwrap(detail::from_base62(key)) < schema_snapshot_size_
            && "schema_cache key out of snapshot range");
   }
 #endif
@@ -146,10 +146,10 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
   for (auto const& [key, child] : object) {
     std::ignore = key;
     encoded.push_back('|');
-    encoded += memory_.add_value(child);
+    encoded += detail::unwrap(memory_.add_value(child));
   }
   auto const root_key = memory_.get_value_key(std::move(encoded));
-  return detail::write_compressed(memory_.values, root_key);
+  return detail::unwrap(detail::write_compressed(memory_.values, root_key));
 }
 
 inline auto FastCompressor::reset() noexcept -> void {
@@ -226,7 +226,7 @@ inline auto FastCrusher::crush(std::string_view input) -> std::string {
     build_dictionary(input);
   }
 
-  auto string = detail::utf8_to_utf16(input);
+  auto string = detail::unwrap(detail::utf8_to_utf16(input));
   string.erase(
     std::remove(string.begin(), string.end(), detail::JSON_CRUSH_DELIMITER),
     string.end()
@@ -246,7 +246,7 @@ inline auto FastCrusher::reset() noexcept -> void {
 }
 
 inline auto FastCrusher::build_dictionary(std::string_view template_json) -> void {
-  auto string = detail::utf8_to_utf16(template_json);
+  auto string = detail::unwrap(detail::utf8_to_utf16(template_json));
   string.erase(
     std::remove(string.begin(), string.end(), detail::JSON_CRUSH_DELIMITER),
     string.end()
@@ -291,7 +291,7 @@ inline auto FastCrusher::apply_dictionary(std::u16string string) const -> std::s
   // 末尾に '_' を追加
   string.push_back(u'_');
 
-  return detail::utf16_to_utf8(string);
+  return detail::unwrap(detail::utf16_to_utf8(string));
 }
 
 } // namespace yase_json

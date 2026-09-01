@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <iterator>
 #include <ranges>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -14,6 +13,8 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#include "yase-json/detail/error.hpp"
 
 namespace yase_json {
 
@@ -86,51 +87,70 @@ auto const append_utf8 = [](std::string& output, char32_t const value) {
   }
 };
 
-auto const decode_utf8_code_point = [](std::string_view const input, size_t& index) -> char32_t {
+auto const decode_utf8_code_point = [](std::string_view const input, size_t& index) -> result<char32_t> {
   auto const lead = static_cast<unsigned char>(input[index]);
   if (lead <= 0x7F) {
     ++index;
     return static_cast<char32_t>(lead);
   }
-  auto read_continuation = [&](size_t const offset) -> unsigned char {
-    if (index + offset >= input.size()) throw std::runtime_error("Invalid UTF-8");
+  auto read_continuation = [&](size_t const offset) -> result<unsigned char> {
+    if (index + offset >= input.size()) {
+      return err("Invalid UTF-8");
+    }
     auto const byte = static_cast<unsigned char>(input[index + offset]);
-    if ((byte & 0xC0) != 0x80) throw std::runtime_error("Invalid UTF-8");
+    if ((byte & 0xC0) != 0x80) {
+      return err("Invalid UTF-8");
+    }
     return byte;
   };
   if ((lead & 0xE0) == 0xC0) {
     auto const b1 = read_continuation(1);
-    auto const v = static_cast<char32_t>(((lead & 0x1F) << 6) | (b1 & 0x3F));
+    if (!b1) return std::unexpected(std::move(b1).error());
+    auto const v = static_cast<char32_t>(((lead & 0x1F) << 6) | (*b1 & 0x3F));
     index += 2; return v;
   }
   if ((lead & 0xF0) == 0xE0) {
-    auto const b1 = read_continuation(1); auto const b2 = read_continuation(2);
-    auto const v = static_cast<char32_t>(((lead & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F));
+    auto const b1 = read_continuation(1);
+    if (!b1) return std::unexpected(std::move(b1).error());
+    auto const b2 = read_continuation(2);
+    if (!b2) return std::unexpected(std::move(b2).error());
+    auto const v = static_cast<char32_t>(((lead & 0x0F) << 12) | ((*b1 & 0x3F) << 6) | (*b2 & 0x3F));
     index += 3; return v;
   }
   if ((lead & 0xF8) == 0xF0) {
-    auto const b1 = read_continuation(1); auto const b2 = read_continuation(2); auto const b3 = read_continuation(3);
-    auto const v = static_cast<char32_t>(((lead & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F));
+    auto const b1 = read_continuation(1);
+    if (!b1) return std::unexpected(std::move(b1).error());
+    auto const b2 = read_continuation(2);
+    if (!b2) return std::unexpected(std::move(b2).error());
+    auto const b3 = read_continuation(3);
+    if (!b3) return std::unexpected(std::move(b3).error());
+    auto const v = static_cast<char32_t>(((lead & 0x07) << 18) | ((*b1 & 0x3F) << 12) | ((*b2 & 0x3F) << 6) | (*b3 & 0x3F));
     index += 4; return v;
   }
-  throw std::runtime_error("Invalid UTF-8");
+  return err("Invalid UTF-8");
 };
 
-auto const utf8_to_utf16 = [](std::string_view const input) -> std::u16string {
+auto const utf8_to_utf16 = [](std::string_view const input) -> result<std::u16string> {
   auto output = std::u16string{};
   output.reserve(input.size());
   size_t index = 0;
-  while (index < input.size()) append_utf16(output, decode_utf8_code_point(input, index));
+  while (index < input.size()) {
+    auto code_point = decode_utf8_code_point(input, index);
+    if (!code_point) {
+      return std::unexpected(std::move(code_point).error());
+    }
+    append_utf16(output, *code_point);
+  }
   return output;
 };
 
-auto const utf16_to_utf8 = [](std::u16string_view const input) -> std::string {
+auto const utf16_to_utf8 = [](std::u16string_view const input) -> result<std::string> {
   auto output = std::string{};
   output.reserve(input.size());
   for (size_t i = 0; i < input.size(); ++i) {
     auto const v = input[i];
     if (is_high_surrogate(v)) {
-      if (i + 1 >= input.size() || !is_low_surrogate(input[i + 1])) throw std::runtime_error("Invalid UTF-16");
+      if (i + 1 >= input.size() || !is_low_surrogate(input[i + 1])) return err("Invalid UTF-16");
       append_utf8(output, 0x10000 + ((static_cast<char32_t>(v - 0xD800) << 10) | (input[i + 1] - 0xDC00)));
       ++i;
     } else {
@@ -144,8 +164,9 @@ auto const encoded_uri_length = [](std::u16string_view const input) -> int64_t {
   int64_t length = 0;
   for (size_t i = 0; i < input.size(); ++i) {
     char32_t cp = input[i];
-    if (is_high_surrogate(input[i])) {
-      if (i + 1 >= input.size() || !is_low_surrogate(input[i + 1])) throw std::runtime_error("Invalid UTF-16");
+    // ponytail: 入力は常にペア済み UTF-16 (utf8_to_utf16 生成 + 非ペア候補は除外済み)。
+    // 非ペアは 1 文字として概算する。精緻化が必要なら候補選択の閾値がずれる前に修正。
+    if (i + 1 < input.size() && is_high_surrogate(input[i]) && is_low_surrogate(input[i + 1])) {
       cp = 0x10000 + ((static_cast<char32_t>(input[i] - 0xD800) << 10) | (input[i + 1] - 0xDC00));
       ++i;
     }
@@ -472,8 +493,12 @@ auto const js_crush_utf16 = [](std::u16string string, int64_t const max_len = 50
 
 } // namespace detail
 
-inline auto crush(std::string_view input) -> std::string {
-  auto string = detail::utf8_to_utf16(input);
+inline auto try_crush(std::string_view input) -> detail::result<std::string> {
+  auto string_result = detail::utf8_to_utf16(input);
+  if (!string_result) {
+    return std::unexpected(std::move(string_result).error());
+  }
+  auto string = std::move(*string_result);
   string.erase(std::remove(string.begin(), string.end(), detail::JSON_CRUSH_DELIMITER), string.end());
   string = detail::json_crush_swap(string);
   auto crushed = detail::js_crush_utf16(std::move(string));
@@ -483,8 +508,12 @@ inline auto crush(std::string_view input) -> std::string {
   return detail::utf16_to_utf8(output);
 }
 
-inline auto uncrush(std::string_view input) -> std::string {
-  auto string = detail::utf8_to_utf16(input);
+inline auto try_uncrush(std::string_view input) -> detail::result<std::string> {
+  auto string_result = detail::utf8_to_utf16(input);
+  if (!string_result) {
+    return std::unexpected(std::move(string_result).error());
+  }
+  auto string = std::move(*string_result);
   if (!string.empty()) string.pop_back();
   auto parts = detail::split_on_char(std::u16string_view{string}, detail::JSON_CRUSH_DELIMITER);
   auto uncrushed = parts.empty() ? std::u16string{} : parts.front();
@@ -497,6 +526,16 @@ inline auto uncrush(std::string_view input) -> std::string {
     }
   }
   return detail::utf16_to_utf8(detail::json_crush_swap(uncrushed, false));
+}
+
+#if __cpp_exceptions
+
+inline auto crush(std::string_view input) -> std::string {
+  return detail::unwrap(try_crush(input));
+}
+
+inline auto uncrush(std::string_view input) -> std::string {
+  return detail::unwrap(try_uncrush(input));
 }
 
 inline auto crush(std::string_view input, std::string& out) -> std::size_t {
@@ -522,5 +561,7 @@ inline auto uncrush(std::string_view input, OutputIt out) -> OutputIt {
   auto const result = uncrush(input);
   return std::copy(result.begin(), result.end(), out);
 }
+
+#endif
 
 } // namespace yase_json

@@ -1,31 +1,48 @@
 #pragma once
 
-#include <stdexcept>
+#include <expected>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include <glaze/glaze.hpp>
 
 #include "yase-json/detail/compress_json_compat.hpp"
+#include "yase-json/detail/error.hpp"
 
 namespace yase_json {
+
+inline auto try_compress(std::string_view json_str) -> detail::result<std::string> {
+  auto data = glz::generic{};
+  if (auto const ec = glz::read_json(data, json_str)) {
+    return detail::err("Failed to parse JSON: " + glz::format_error(ec, json_str));
+  }
+
+  auto memory = detail::CompressionMemory{};
+  auto root_key = memory.add_value(data);
+  if (!root_key) {
+    return std::unexpected(std::move(root_key).error());
+  }
+  return detail::write_compressed(memory.values, *root_key);
+}
+
+#if __cpp_exceptions
 
 class Compressor {
 public:
   auto compress(std::string_view json_str) -> std::string {
-    auto data = glz::generic{};
-    if (auto const ec = glz::read_json(data, json_str)) {
-      throw std::runtime_error("Failed to parse JSON: " + glz::format_error(ec, json_str));
+    auto result = try_compress(json_str);
+    if (!result) {
+      detail::throw_error(result.error());
     }
-
-    auto memory = detail::CompressionMemory{};
-    auto const root_key = memory.add_value(data);
-    return detail::write_compressed(memory.values, root_key);
+    return std::move(*result);
   }
 };
 
 [[nodiscard]] inline auto compress(std::string_view json_str) -> std::string {
   return Compressor{}.compress(json_str);
 }
+
+#endif
 
 } // namespace yase_json

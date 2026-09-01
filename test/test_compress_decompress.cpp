@@ -8,7 +8,7 @@ TEST_CASE("Base62 encoding/decoding", "[base62]") {
   SECTION("Encode/Decode symmetry") {
     for (uint64_t i = 0; i < 1000; ++i) {
       auto encoded = yase_json::detail::to_base62(i);
-      auto decoded = yase_json::detail::from_base62(encoded);
+      auto decoded = yase_json::detail::unwrap(yase_json::detail::from_base62(encoded));
       REQUIRE(i == decoded);
     }
   }

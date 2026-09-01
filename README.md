@@ -33,6 +33,33 @@ cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=[path/to/vcpkg]/scripts/buildsystems/
 cmake --build build
 ```
 
+## FREESTANDING モード (wasm32-unknown-unknown / wasm3 埋め込み)
+
+例外なしの freestanding 環境 (`wasm32-unknown-unknown` + `-nostdlib -fno-exceptions`)
+でビルドしたゲストモジュールを wasm3 に埋め込んで使用できます。
+
+```bash
+# clang が必要。wasm3 ソースが無い場合は build_wasm/wasm3 に clone される
+./build_wasm.sh [wasm3_source_dir]
+# 生成物: build_wasm/freestanding/yase-json-guest.wasm (import 0, メモリ export)
+```
+
+ホスト側の使い方 (C API は `freestanding/guest.cpp` のコメント参照):
+
+1. `_initialize()` を一度呼ぶ (静的初期化子)
+2. `ys_alloc(len)` でゲストメモリに入力 JSON を書き込む
+3. `ys_compress(in, in_len, out, out_cap)` 等を呼ぶ (戻り値は出力長、-1 はエラー)
+4. ゲストメモリから出力を読む。エラー時は `ys_last_error()` / `ys_last_error_len()`
+5. 次の処理の前に `ys_reset()` (bump アロケータの一括解放)
+
+実行スタック要件: glaze の再帰パースのため、wasm3 ランタイムスタックは
+2MB 程度 (`m3_NewRuntime(env, 2 * 1024 * 1024, nullptr)`) を推奨。
+wasm3 を使ったラウンドトリップ検証は `./build_wasm.sh` の実行時に自動で行われます。
+
+ホスト側 (例外あり) の API は変更なく、例外なしコア (`try_compress` /
+`try_decompress` / `try_crush` / `try_uncrush`、`std::expected` 返し) も
+直接利用できます。
+
 ## 使い方
 
 ### 構造的圧縮

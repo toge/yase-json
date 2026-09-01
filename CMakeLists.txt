@@ -4,6 +4,7 @@ project(yase-json LANGUAGES CXX)
 option(BUILD_TEST "Enable tests" ON)
 option(BUILD_EXAMPLE "Enable examples" ON)
 option(BUILD_BENCH "Enable benchmarks" OFF)
+option(YASE_JSON_FREESTANDING "Build wasm32-unknown-unknown freestanding guest" OFF)
 
 ## add warning
 if (CMAKE_COMPILER_IS_GNUCXX)
@@ -97,4 +98,8 @@ if(BUILD_EXAMPLE)
     add_executable(example example.cpp)
     target_link_libraries(example PRIVATE yase-json::yase-json)
     target_compile_features(example PRIVATE cxx_std_23)
+endif()
+
+if(YASE_JSON_FREESTANDING)
+    add_subdirectory(freestanding)
 endif()

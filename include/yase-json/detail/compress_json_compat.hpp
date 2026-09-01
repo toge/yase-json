@@ -5,7 +5,6 @@
 #include <cmath>
 #include <cstdint>
 #include <ranges>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -13,6 +12,8 @@
 #include <vector>
 
 #include <glaze/glaze.hpp>
+
+#include "yase-json/detail/error.hpp"
 
 namespace yase_json::detail {
 
@@ -66,13 +67,30 @@ inline auto to_base62(uint64_t value) -> std::string {
   return encoded;
 }
 
-inline auto from_base62(std::string_view encoded) -> uint64_t {
+inline auto from_base62(std::string_view encoded) -> result<uint64_t> {
   auto value = uint64_t{0};
   for (auto const ch : encoded) {
     if (!valid_table[static_cast<uint8_t>(ch)]) {
-      throw std::invalid_argument(std::string{"Invalid base62 character: "} + ch);
+      return err("Invalid base62 character: " + std::string{ch}, error::kind_t::invalid_argument);
     }
     value = value * 62 + decode_table[static_cast<uint8_t>(ch)];
+  }
+  return value;
+}
+
+inline auto parse_u64_digits(std::string_view digits) -> uint64_t {
+  auto value = uint64_t{0};
+  for (auto const ch : digits) {
+    value = value * 10 + static_cast<uint64_t>(ch - '0');
+  }
+  return value;
+}
+
+// glaze 内蔵の数値パーサーでstrtod/std::stod を置き換える (freestanding 安全)
+inline auto parse_number(std::string_view number) -> result<double> {
+  auto value = double{0};
+  if (auto const ec = glz::read_json(value, number)) {
+    return err("Invalid number: " + std::string{number});
   }
   return value;
 }
@@ -106,7 +124,7 @@ inline auto decimal_to_base62(std::string_view digits) -> std::string {
     return "0";
   }
   if (is_safe_integer_string(digits)) {
-    return to_base62(std::stoull(std::string{digits}));
+    return to_base62(parse_u64_digits(digits));
   }
 
   auto current = std::string{digits};
@@ -224,9 +242,9 @@ inline auto reverse_string(std::string_view value) -> std::string {
   return reversed;
 }
 
-inline auto number_to_json_string(double value) -> std::string {
+inline auto number_to_json_string(double value) -> result<std::string> {
   if (value == 0.0) {
-    return "0";
+    return std::string{"0"};
   }
 
   auto node = glz::generic{};
@@ -234,20 +252,24 @@ inline auto number_to_json_string(double value) -> std::string {
 
   auto out = std::string{};
   if (auto const ec = glz::write_json(node, out)) {
-    throw std::runtime_error("Failed to encode number");
+    return err("Failed to encode number");
   }
   if (out == "-0") {
-    return "0";
+    return std::string{"0"};
   }
   return out;
 }
 
-inline auto num_to_s(double value) -> std::string {
+inline auto num_to_s(double value) -> result<std::string> {
   if (value < 0) {
-    return "-" + num_to_s(-value);
+    return num_to_s(-value).transform([](std::string const& s) { return "-" + s; });
   }
 
-  auto number = number_to_json_string(value);
+  auto number_result = number_to_json_string(value);
+  if (!number_result) {
+    return number_result;
+  }
+  auto number = std::move(*number_result);
   auto dot = number.find('.');
   if (dot == std::string::npos) {
     auto const exp = number.find('e');
@@ -278,14 +300,14 @@ inline auto num_to_s(double value) -> std::string {
   return encoded;
 }
 
-inline auto s_to_num(std::string_view encoded) -> double {
+inline auto s_to_num(std::string_view encoded) -> result<double> {
   if (!encoded.empty() && encoded.front() == '-') {
-    return -s_to_num(encoded.substr(1));
+    return s_to_num(encoded.substr(1)).transform([](double const v) { return -v; });
   }
 
   auto const first_dot = encoded.find('.');
   if (first_dot == std::string_view::npos) {
-    return std::stod(s_to_int_str(encoded));
+    return parse_number(s_to_int_str(encoded));
   }
 
   auto a = s_to_int_str(encoded.substr(0, first_dot));
@@ -303,20 +325,20 @@ inline auto s_to_num(std::string_view encoded) -> double {
     }
     number += s_to_int_str(c);
   }
-  return std::stod(number);
+  return parse_number(number);
 }
 
-inline auto encode_number(double value) -> std::string {
+inline auto encode_number(double value) -> result<std::string> {
   if (value == std::numeric_limits<double>::infinity()) {
-    return "N|+";
+    return std::string{"N|+"};
   }
   if (value == -std::numeric_limits<double>::infinity()) {
-    return "N|-";
+    return std::string{"N|-"};
   }
   if (std::isnan(value)) {
-    return "N|0";
+    return std::string{"N|0"};
   }
-  return "n|" + num_to_s(value);
+  return num_to_s(value).transform([](std::string const& s) { return "n|" + s; });
 }
 
 struct CompressionMemory {
@@ -364,12 +386,12 @@ struct CompressionMemory {
     return schema_key;
   }
 
-  auto add_value(glz::generic const& value, bool array_element = false, size_t depth = 0) -> std::string {
+  auto add_value(glz::generic const& value, bool array_element = false, size_t depth = 0) -> result<std::string> {
     if (depth > kMaxDepth) {
-      throw std::runtime_error("Compression depth limit exceeded");
+      return err("Compression depth limit exceeded");
     }
     if (value.is_null()) {
-      return array_element ? "_" : "";
+      return array_element ? std::string{"_"} : std::string{};
     }
 
     if (value.is_object()) {
@@ -389,8 +411,12 @@ struct CompressionMemory {
       encoded += get_schema(keys);
       for (auto const& [key, child] : object) {
         std::ignore = key;
+        auto child_key = add_value(child, false, depth + 1);
+        if (!child_key) {
+          return child_key;
+        }
         encoded.push_back('|');
-        encoded += add_value(child, false, depth + 1);
+        encoded += std::move(*child_key);
       }
       return get_value_key(std::move(encoded));
     }
@@ -399,7 +425,15 @@ struct CompressionMemory {
       auto encoded = std::string{"a"};
       for (auto const& child : value.get<glz::generic::array_t>()) {
         encoded.push_back('|');
-        encoded += child.is_null() ? "_" : add_value(child, true, depth + 1);
+        if (!child.is_null()) {
+          auto child_key = add_value(child, true, depth + 1);
+          if (!child_key) {
+            return child_key;
+          }
+          encoded += std::move(*child_key);
+        } else {
+          encoded += "_";
+        }
       }
       if (encoded == "a") {
         encoded = "a|";
@@ -412,19 +446,23 @@ struct CompressionMemory {
     }
 
     if (value.is_number()) {
-      return get_value_key(encode_number(value.get<double>()));
+      auto encoded_number = encode_number(value.get<double>());
+      if (!encoded_number) {
+        return encoded_number;
+      }
+      return get_value_key(std::move(*encoded_number));
     }
 
     if (value.is_string()) {
       return get_value_key(encode_string(value.get<std::string>()));
     }
 
-    throw std::runtime_error("Unsupported JSON value");
+    return err("Unsupported JSON value");
   }
 };
 
 // 3箇所で重複していた圧縮結果のシリアライズを集約
-inline auto write_compressed(std::vector<std::string> const& values, std::string const& root_key) -> std::string {
+inline auto write_compressed(std::vector<std::string> const& values, std::string const& root_key) -> result<std::string> {
   auto vals = glz::generic::array_t{};
   vals.reserve(values.size());
   for (auto const& v : values) {
@@ -443,7 +481,7 @@ inline auto write_compressed(std::vector<std::string> const& values, std::string
   final_node = std::move(result);
   auto out = std::string{};
   if (auto const ec = glz::write_json(final_node, out)) {
-    throw std::runtime_error("Failed to generate compressed JSON");
+    return err("Failed to generate compressed JSON");
   }
   return out;
 }
