@@ -273,7 +273,7 @@ cd /home/toge/src/freestanding-runtime && git add -A && git commit -m "feat: yas
 //
 // libstdc++ / libc が要求するランタイムシンボルのうちターゲット非依存なものを供給する:
 //   - libcalls (memcpy/memmove/memset/memcmp/bcmp/strlen/strcmp)
-//   - bump allocator + malloc 系 + operator new/delete
+//   - bump allocator + malloc 系 + operator new/delete + fs_heap_reset 一括解放
 //   - __cxa_guard_* / __cxa_atexit / __cxa_pure_virtual / abort
 //   - 浮動小数点分類 (isinf/isnan/isfinite/signbit/fpclassify)
 //   - errno (__errno_location / __wasm_errno)
@@ -404,7 +404,7 @@ set(FS_SHIM_DIR "${FR_DIR}/include/shim"
 set(FS_RUNTIME_SOURCES "${FR_DIR}/runtime/freestanding_runtime.cpp"
   CACHE STRING "汎用ランタイムのソース一覧")
 file(GLOB_RECURSE _fr_shim_files "${FR_DIR}/include/*.h")
-set(FS_SHIM_FILES "${_fr_shim_files}" CACHE STRING "shim ヘッダー一覧 (custom command の DEPENDS 用)")
+set(FS_SHIM_FILES "${_fr_shim_files}" CACHE STRING "shim ヘッダー一覧 (custom command の DEPENDS 用)" FORCE)
 
 list(APPEND CMAKE_MODULE_PATH "${FR_DIR}/cmake")
 include(freestanding_runtime)
