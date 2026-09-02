@@ -3,7 +3,8 @@ add_executable(smoke_wasi_minimal smoke_wasi_minimal.cpp)
 target_link_libraries(smoke_wasi_minimal PRIVATE yase-json)
 target_compile_features(smoke_wasi_minimal PUBLIC cxx_std_23)
 target_compile_definitions(smoke_wasi_minimal PRIVATE YASE_JSON_WASI_MINIMAL=1)
-target_compile_options(smoke_wasi_minimal PRIVATE $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-exceptions>)
+# Emscripten は -sDISABLE_EXCEPTION_CATCHING=0 で例外を有効化するため -fno-exceptions と衝突する
+target_compile_options(smoke_wasi_minimal PRIVATE $<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<NOT:$<BOOL:${EMSCRIPTEN}>>>:-fno-exceptions>)
 add_test(NAME smoke_wasi_minimal COMMAND smoke_wasi_minimal)
 
 if(ENABLE_WASI_MINIMAL)
