@@ -33,32 +33,39 @@ cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=[path/to/vcpkg]/scripts/buildsystems/
 cmake --build build
 ```
 
-## FREESTANDING モード (wasm32-unknown-unknown / wasm3 埋め込み)
+## WASI モード (wasm32-wasip1)
 
-例外なしの freestanding 環境 (`wasm32-unknown-unknown` + `-nostdlib -fno-exceptions`)
-でビルドしたゲストモジュールを wasm3 に埋め込んで使用できます。
+本リポジトリの WASI 対応は `wasm32-wasip1` + `wasi-sdk` sysroot を想定し、`YASE_JSON_WASI_MINIMAL` で例外なし (no exceptions) モードを提供します。
+hosted ヘッダが必要なため真の freestanding (`wasm32-unknown-unknown` + `-nostdlib`) は非対応です。
 
 ```bash
-# clang が必要。wasm3 ソースが無い場合は build_wasm/wasm3 に clone される
-./build_wasm.sh [wasm3_source_dir]
-# 生成物: build_wasm/freestanding/yase-json-guest.wasm (import 0, メモリ export)
+# 手動で WASI minimal を有効化 (ホスト検証や -fno-exceptions ビルド):
+g++ -std=c++23 -I include -DYASE_JSON_WASI_MINIMAL -fno-exceptions ...
+cmake -DENABLE_WASI_MINIMAL=ON ...
+clang++ --target=wasm32-wasip1 --sysroot=/opt/wasi-sdk/share/wasi-sysroot -DYASE_JSON_WASI_MINIMAL -fno-exceptions ...
 ```
 
-ホスト側の使い方 (C API は `freestanding/guest.cpp` のコメント参照):
+`wasm32-wasip2` 環境の対応は現時点では未検証です。wasi-sdk が正式対応したら検証予定です。
 
-1. `_initialize()` を一度呼ぶ (静的初期化子)
-2. `ys_alloc(len)` でゲストメモリに入力 JSON を書き込む
-3. `ys_compress(in, in_len, out, out_cap)` 等を呼ぶ (戻り値は出力長、-1 はエラー)
-4. ゲストメモリから出力を読む。エラー時は `ys_last_error()` / `ys_last_error_len()`
-5. 次の処理の前に `ys_reset()` (bump アロケータの一括解放)
+### 有効化方法
 
-実行スタック要件: glaze の再帰パースのため、wasm3 ランタイムスタックは
-2MB 程度 (`m3_NewRuntime(env, 2 * 1024 * 1024, nullptr)`) を推奨。
-wasm3 を使ったラウンドトリップ検証は `./build_wasm.sh` の実行時に自動で行われます。
+| 方法             | 手順                                                                               |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| コンパイラフラグ | `-DYASE_JSON_WASI_MINIMAL` を付与                                                  |
+| CMake            | `-DENABLE_WASI_MINIMAL=ON` (`CMakeLists.txt:7`, `include/yase-json/config.hpp:11`) |
 
-ホスト側 (例外あり) の API は変更なく、例外なしコア (`try_compress` /
-`try_decompress` / `try_crush` / `try_uncrush`、`std::expected` 返し) も
-直接利用できます。
+`wasm32-wasip1` / `wasm32-emscripten` は WASI/hosted とみなすため自動では有効にならず、WASI 上で WASI_MINIMAL サブセットを検証したい場合は明示的に `-DYASE_JSON_WASI_MINIMAL` を付与してください。
+
+### 例外なしモードの挙動
+
+`YASE_JSON_WASI_MINIMAL` 定義時、ライブラリ内の全ての例外送出は `YASE_JSON_THROW` マクロ（`include/yase-json/config.hpp`）経由で `std::abort()` に置き換わります。`<stdexcept>` は include されず `-fno-exceptions` でビルドできます。`wasip1` では `iostream` が WASI 経由で利用可能なため無効化しません。
+
+| 状況 | hosted | WASI_MINIMAL |
+| --- | --- | --- |
+| コンパイル時（不正入力） | コンパイルエラー | コンパイルエラー（変わらず） |
+| 実行時（不正JSON、`at`外し等） | `std::runtime_error` 等を throw | `std::abort()` |
+
+`Compressor` / `Decompressor` / `crush` / `uncrush` / `Fast*` / `pipeline::*` を含む全 API は `WASI_MINIMAL` でも利用可能ですが、失敗時は throw ではなく abort します。`try_*` 系（`std::expected` 返し）はどちらのモードでも同じく利用でき、WASI 上でエラーをハンドルしたい場合は `try_*` の使用を推奨します。
 
 ## 使い方
 

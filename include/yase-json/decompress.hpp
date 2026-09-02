@@ -8,6 +8,7 @@
 
 #include <glaze/glaze.hpp>
 
+#include "yase-json/config.hpp"
 #include "yase-json/detail/compress_json_compat.hpp"
 #include "yase-json/detail/error.hpp"
 
@@ -198,8 +199,6 @@ inline auto try_decompress(std::string_view compressed_json_str) -> detail::resu
   return out;
 }
 
-#if __cpp_exceptions
-
 class Decompressor {
 public:
   auto decompress(std::string_view compressed_json_str) -> std::string {
@@ -215,7 +214,5 @@ public:
 [[nodiscard]] inline auto decompress(std::string_view compressed_json_str) -> std::string {
   return Decompressor{}.decompress(compressed_json_str);
 }
-
-#endif
 
 } // namespace yase_json

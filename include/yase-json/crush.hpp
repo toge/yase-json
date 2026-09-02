@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "yase-json/config.hpp"
 #include "yase-json/detail/error.hpp"
 
 namespace yase_json {
@@ -528,8 +529,6 @@ inline auto try_uncrush(std::string_view input) -> detail::result<std::string> {
   return detail::utf16_to_utf8(detail::json_crush_swap(uncrushed, false));
 }
 
-#if __cpp_exceptions
-
 inline auto crush(std::string_view input) -> std::string {
   return detail::unwrap(try_crush(input));
 }
@@ -561,7 +560,5 @@ inline auto uncrush(std::string_view input, OutputIt out) -> OutputIt {
   auto const result = uncrush(input);
   return std::copy(result.begin(), result.end(), out);
 }
-
-#endif
 
 } // namespace yase_json

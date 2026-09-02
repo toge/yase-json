@@ -21,18 +21,34 @@ int main() {
 }
 )";
 
-  yase_json::Compressor compressor;
-  std::string compressed = compressor.compress(json_str);
+  // try_* は hosted / WASI minimal どちらでも利用可能
+  auto compressed_res = yase_json::try_compress(json_str);
+  if (!compressed_res) {
+    std::cerr << "compress failed: " << compressed_res.error().message << '\n';
+    return 1;
+  }
+  std::string compressed = *compressed_res;
   std::cout << "Compressed: " << compressed << '\n';
 
-  yase_json::Decompressor decompressor;
-  std::string decompressed = decompressor.decompress(compressed);
-  std::cout << "Decompressed: " << decompressed << '\n';
+  auto decompressed_res = yase_json::try_decompress(compressed);
+  if (!decompressed_res) {
+    std::cerr << "decompress failed: " << decompressed_res.error().message << '\n';
+    return 1;
+  }
+  std::cout << "Decompressed: " << *decompressed_res << '\n';
 
-  auto crushed = yase_json::crush(json_str);
-  std::cout << "Crushed: " << crushed << '\n';
-  auto uncrushed = yase_json::uncrush(crushed);
-  std::cout << "Uncrushed: " << uncrushed << '\n';
+  auto crushed_res = yase_json::try_crush(json_str);
+  if (!crushed_res) {
+    std::cerr << "crush failed: " << crushed_res.error().message << '\n';
+    return 1;
+  }
+  std::cout << "Crushed: " << *crushed_res << '\n';
+  auto uncrushed_res = yase_json::try_uncrush(*crushed_res);
+  if (!uncrushed_res) {
+    std::cerr << "uncrush failed: " << uncrushed_res.error().message << '\n';
+    return 1;
+  }
+  std::cout << "Uncrushed: " << *uncrushed_res << '\n';
 
   return 0;
 }

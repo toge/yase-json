@@ -8,6 +8,7 @@
 
 #include <glaze/glaze.hpp>
 
+#include "yase-json/config.hpp"
 #include "yase-json/compress.hpp"
 #include "yase-json/crush.hpp"
 #include "yase-json/decompress.hpp"
@@ -72,7 +73,7 @@ public:
 inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
   auto data = glz::generic{};
   if (auto const ec = glz::read_json(data, json_str)) {
-    throw std::runtime_error("Failed to parse JSON: " + glz::format_error(ec, json_str));
+    YASE_JSON_THROW(std::runtime_error("Failed to parse JSON: " + glz::format_error(ec, json_str)));
   }
 
   // オブジェクト以外の入力は通常の Compressor に委譲
