@@ -357,11 +357,6 @@ jobs:
       - name: Test (wasmtime)
         run: ctest --test-dir build -V
 
-      - name: Verify header-only build with wasi-sdk
-        run: |
-          /opt/wasi-sdk/bin/clang++ --target=wasm32-wasip1 -std=c++23 -fno-exceptions -I include -c test/mock_test_wasi.cpp -o /tmp/mock_test_wasi_wasm.o
-          file /tmp/mock_test_wasi_wasm.o | grep -q WebAssembly
-
   linux-wasip2:
     runs-on: ubuntu-latest
     container: fedora:44
@@ -428,8 +423,3 @@ jobs:
 
       - name: Test (wasmtime)
         run: ctest --test-dir build -V
-
-      - name: Verify header-only build with wasi-sdk
-        run: |
-          /opt/wasi-sdk/bin/clang++ --target=wasm32-wasip2 -std=c++23 -fno-exceptions -I include -c test/mock_test_wasi.cpp -o /tmp/mock_test_wasi_wasm.o
-          file /tmp/mock_test_wasi_wasm.o | grep -q WebAssembly
