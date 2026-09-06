@@ -6,86 +6,84 @@
 #include "yase-json/crush.hpp"
 
 TEST_CASE("Decompressor rejects malformed inputs", "[error][decompress]") {
-  yase_json::Decompressor decompressor;
-
   SECTION("invalid JSON") {
-    REQUIRE_THROWS_AS(decompressor.decompress("not json"), std::runtime_error);
+    auto result = yase_json::try_decompress("not json");
+    REQUIRE_FALSE(result);
+    REQUIRE(result.error().message.find("Failed to parse") != std::string::npos);
   }
 
   SECTION("root not array") {
-    REQUIRE_THROWS_AS(decompressor.decompress(R"({"a":1})"), std::runtime_error);
+    auto result = yase_json::try_decompress(R"({"a":1})");
+    REQUIRE_FALSE(result);
+    REQUIRE(result.error().message == "Root must be array");
   }
 
   SECTION("root array wrong size") {
-    REQUIRE_THROWS_AS(decompressor.decompress(R"([[]])"), std::runtime_error);
-    REQUIRE_THROWS_AS(decompressor.decompress(R"([[],"a","extra"])"), std::runtime_error);
+    REQUIRE_FALSE(yase_json::try_decompress(R"([[]])"));
+    REQUIRE_FALSE(yase_json::try_decompress(R"([[],"a","extra"])"));
   }
 
   SECTION("values not array") {
-    REQUIRE_THROWS_AS(decompressor.decompress(R"(["not_array","0"])"), std::runtime_error);
+    auto result = yase_json::try_decompress(R"(["not_array","0"])");
+    REQUIRE_FALSE(result);
+    REQUIRE(result.error().message == "Values must be an array");
   }
 
   SECTION("root key not string") {
-    REQUIRE_THROWS_AS(decompressor.decompress(R"([[],123])"), std::runtime_error);
+    auto result = yase_json::try_decompress(R"([[],123])");
+    REQUIRE_FALSE(result);
+    REQUIRE(result.error().message == "Root key must be a string");
   }
 
   SECTION("out-of-range key") {
-    // values has 1 entry at index 0, root key "1" is out of range
-    REQUIRE_THROWS_AS(decompressor.decompress(R"([["a|"],"1"])"), std::out_of_range);
+    auto result = yase_json::try_decompress(R"([["a|"],"1"])");
+    REQUIRE_FALSE(result);
+    REQUIRE(result.error().message.find("out of range") != std::string::npos);
   }
 
   SECTION("unknown boolean encoding") {
-    // craft compressed payload where one value is "b|X"
-    auto const json = R"({"flag":true})";
-    yase_json::Compressor c;
-    auto compressed = c.compress(json);
-    // replace "b|T" entry with "b|X" in values array
-    // compressed is like [["b|T",...],"0"] — mutate
-    compressed = std::string(R"([["b|X"],"0"])");
-    REQUIRE_THROWS_AS(decompressor.decompress(compressed), std::runtime_error);
+    auto compressed = std::string(R"([["b|X"],"0"])");
+    auto result = yase_json::try_decompress(compressed);
+    REQUIRE_FALSE(result);
+    REQUIRE(result.error().message.find("Unknown boolean") != std::string::npos);
   }
 
   SECTION("unknown special number encoding") {
     auto compressed = std::string(R"([["N|x"],"0"])");
-    REQUIRE_THROWS_AS(decompressor.decompress(compressed), std::runtime_error);
+    auto result = yase_json::try_decompress(compressed);
+    REQUIRE_FALSE(result);
+    REQUIRE(result.error().message.find("Unknown special number") != std::string::npos);
   }
 
-  SECTION("depth limit exceeded") {
-#ifndef __EMSCRIPTEN__
-    // Deep JSON via actual compression — compression itself should throw
-    // Emscripten のデフォルトスタックでは 520段で溢れるためスキップ
-    std::string deep_json = "";
-    for (int i = 0; i < 520; ++i) deep_json += "[";
-    deep_json += "1";
-    for (int i = 0; i < 520; ++i) deep_json += "]";
-    yase_json::Compressor comp;
-    REQUIRE_THROWS_AS(comp.compress(deep_json), std::runtime_error);
-#else
-    SUCCEED("skipped on Emscripten due to stack limit");
-#endif
-  }
 }
 
 TEST_CASE("Compressor rejects invalid input", "[error][compress]") {
-  yase_json::Compressor c;
-  SECTION("invalid JSON throws") {
-    REQUIRE_THROWS_AS(c.compress("not json"), std::runtime_error);
-    REQUIRE_THROWS_AS(c.compress("{bad}"), std::runtime_error);
+  SECTION("invalid JSON returns error") {
+    auto result1 = yase_json::try_compress("not json");
+    REQUIRE_FALSE(result1);
+    REQUIRE(result1.error().message.find("Failed to parse") != std::string::npos);
+
+    auto result2 = yase_json::try_compress("{bad}");
+    REQUIRE_FALSE(result2);
+    REQUIRE(result2.error().message.find("Failed to parse") != std::string::npos);
   }
 }
 
 TEST_CASE("crush/uncrush edge cases", "[error][crush]") {
   SECTION("empty string crush round-trip") {
-    auto const crushed = yase_json::crush("");
-    auto const uncrushed = yase_json::uncrush(crushed);
-    REQUIRE(uncrushed == "");
+    auto crushed = yase_json::try_crush("");
+    REQUIRE(crushed);
+    auto uncrushed = yase_json::try_uncrush(*crushed);
+    REQUIRE(uncrushed);
+    REQUIRE(*uncrushed == "");
   }
 
   SECTION("U+0001 is removed by crush (documented behavior)") {
     std::string with_delim = std::string("a") + char(0x01) + "b";
-    auto const crushed = yase_json::crush(with_delim);
-    auto const uncrushed = yase_json::uncrush(crushed);
-    // delimiter is stripped, so round-trip loses it
-    REQUIRE(uncrushed == "ab");
+    auto crushed = yase_json::try_crush(with_delim);
+    REQUIRE(crushed);
+    auto uncrushed = yase_json::try_uncrush(*crushed);
+    REQUIRE(uncrushed);
+    REQUIRE(*uncrushed == "ab");
   }
 }

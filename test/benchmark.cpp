@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -110,22 +111,36 @@ auto roundtrip_verify(std::string_view original, std::string_view decompressed) 
 }
 
 auto run_benchmark(std::string const& label, std::string const& json, int iterations) -> BenchResult {
-  yase_json::Compressor compressor;
-  yase_json::Decompressor decompressor;
-
   // warm-up: one compress + decompress to populate caches, verification
-  auto warm_compressed = compressor.compress(json);
-  auto warm_decompressed = decompressor.decompress(warm_compressed);
+  auto warm_compressed_result = yase_json::try_compress(json);
+  if (!warm_compressed_result) {
+    std::cerr << "COMPRESS FAILED: " << label << " - " << warm_compressed_result.error().message << "\n";
+    std::exit(EXIT_FAILURE);
+  }
+  auto const& warm_compressed = *warm_compressed_result;
+
+  auto warm_decompressed_result = yase_json::try_decompress(warm_compressed);
+  if (!warm_decompressed_result) {
+    std::cerr << "DECOMPRESS FAILED: " << label << " - " << warm_decompressed_result.error().message << "\n";
+    std::exit(EXIT_FAILURE);
+  }
+  auto const& warm_decompressed = *warm_decompressed_result;
+
   if (!roundtrip_verify(json, warm_decompressed)) {
     std::cerr << "VERIFICATION FAILED: " << label << "\n";
-    std::exit(1);
+    std::exit(EXIT_FAILURE);
   }
 
   // measure compress
   auto const comp_start = Clock::now();
   std::string last_compressed;
   for (int i = 0; i < iterations; ++i) {
-    last_compressed = compressor.compress(json);
+    auto result = yase_json::try_compress(json);
+    if (!result) {
+      std::cerr << "COMPRESS FAILED during benchmark\n";
+      std::exit(EXIT_FAILURE);
+    }
+    last_compressed = std::move(*result);
   }
   auto const comp_end = Clock::now();
 
@@ -133,7 +148,12 @@ auto run_benchmark(std::string const& label, std::string const& json, int iterat
   auto const dec_start = Clock::now();
   std::string last_decompressed;
   for (int i = 0; i < iterations; ++i) {
-    last_decompressed = decompressor.decompress(last_compressed);
+    auto result = yase_json::try_decompress(last_compressed);
+    if (!result) {
+      std::cerr << "DECOMPRESS FAILED during benchmark\n";
+      std::exit(EXIT_FAILURE);
+    }
+    last_decompressed = std::move(*result);
   }
   auto const dec_end = Clock::now();
 

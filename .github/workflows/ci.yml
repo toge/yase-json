@@ -288,3 +288,148 @@ jobs:
         run: |
           source /opt/emsdk/emsdk_env.sh
           ctest --test-dir build -V
+
+  linux-wasip1:
+    runs-on: ubuntu-latest
+    container: fedora:44
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: dnf install -y cmake ninja-build git curl zip unzip tar gcc-c++ file
+
+      - name: Cache wasi-sdk
+        uses: actions/cache@v4
+        with:
+          path: /opt/wasi-sdk
+          key: wasi-sdk-34.0
+
+      - name: Install wasi-sdk
+        run: |
+          if [ ! -d /opt/wasi-sdk/bin/clang ]; then
+            curl -L https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz \
+              -o /tmp/wasi-sdk.tar.gz
+            mkdir -p /opt/wasi-sdk
+            tar -xzf /tmp/wasi-sdk.tar.gz -C /opt/wasi-sdk --strip-components=1
+          fi
+          /opt/wasi-sdk/bin/clang --version
+          /opt/wasi-sdk/bin/clang++ --version
+
+      - name: Install wasmtime
+        run: |
+          WASMTIME_VERSION=$(curl -s https://api.github.com/repos/bytecodealliance/wasmtime/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+          curl -sSL "https://github.com/bytecodealliance/wasmtime/releases/latest/download/wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz" -o /tmp/wasmtime.tar.xz
+          tar -xf /tmp/wasmtime.tar.xz -C /tmp
+          WASMTIME_DIR="/tmp/wasmtime-v${WASMTIME_VERSION}-x86_64-linux"
+          echo "${WASMTIME_DIR}" >> $GITHUB_PATH
+          "${WASMTIME_DIR}/wasmtime" --version
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/vcpkg
+            build/vcpkg_installed
+          key: ${{ runner.os }}-wasip1-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-wasip1-vcpkg-
+
+      - name: Install vcpkg
+        run: |
+          if [ ! -d ~/vcpkg ]; then
+            git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+          fi
+          git -C ~/vcpkg fetch --tags
+          git -C ~/vcpkg checkout 2026.02.27
+          ~/vcpkg/bootstrap-vcpkg.sh
+
+      - name: Build WASI (wasm32-wasip1)
+        run: |
+          cmake -B build -S . -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_TARGET_TRIPLET=wasm32-wasip1 \
+            -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk-p1.cmake
+          cmake --build build --target mock_test_wasi
+          file build/test/mock_test_wasi | grep -q WebAssembly
+
+      - name: Test (wasmtime)
+        run: ctest --test-dir build -V
+
+      - name: Verify header-only build with wasi-sdk
+        run: |
+          /opt/wasi-sdk/bin/clang++ --target=wasm32-wasip1 -std=c++23 -fno-exceptions -I include -c test/mock_test_wasi.cpp -o /tmp/mock_test_wasi_wasm.o
+          file /tmp/mock_test_wasi_wasm.o | grep -q WebAssembly
+
+  linux-wasip2:
+    runs-on: ubuntu-latest
+    container: fedora:44
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: dnf install -y cmake ninja-build git curl zip unzip tar gcc-c++ file
+
+      - name: Cache wasi-sdk
+        uses: actions/cache@v4
+        with:
+          path: /opt/wasi-sdk
+          key: wasi-sdk-34.0
+
+      - name: Install wasi-sdk
+        run: |
+          if [ ! -d /opt/wasi-sdk/bin/clang ]; then
+            curl -L https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz -o /tmp/wasi-sdk.tar.gz
+            mkdir -p /opt/wasi-sdk
+            tar -xzf /tmp/wasi-sdk.tar.gz -C /opt/wasi-sdk --strip-components=1
+          fi
+          /opt/wasi-sdk/bin/clang --version
+          /opt/wasi-sdk/bin/clang++ --version
+
+      - name: Install wasmtime
+        run: |
+          WASMTIME_VERSION=$(curl -s https://api.github.com/repos/bytecodealliance/wasmtime/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+          curl -sSL "https://github.com/bytecodealliance/wasmtime/releases/latest/download/wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz" -o /tmp/wasmtime.tar.xz
+          tar -xf /tmp/wasmtime.tar.xz -C /tmp
+          WASMTIME_DIR="/tmp/wasmtime-v${WASMTIME_VERSION}-x86_64-linux"
+          echo "${WASMTIME_DIR}" >> $GITHUB_PATH
+          "${WASMTIME_DIR}/wasmtime" --version
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/vcpkg
+            build/vcpkg_installed
+          key: ${{ runner.os }}-wasip2-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-wasip2-vcpkg-
+
+      - name: Install vcpkg
+        run: |
+          if [ ! -d ~/vcpkg ]; then
+            git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+          fi
+          git -C ~/vcpkg fetch --tags
+          git -C ~/vcpkg checkout 2026.02.27
+          ~/vcpkg/bootstrap-vcpkg.sh
+
+      - name: Build WASI (wasm32-wasip2)
+        run: |
+          cmake -B build -S . -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_TARGET_TRIPLET=wasm32-wasip2 \
+            -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk-p2.cmake
+          cmake --build build --target mock_test_wasi
+          file build/test/mock_test_wasi | grep -q WebAssembly
+
+      - name: Test (wasmtime)
+        run: ctest --test-dir build -V
+
+      - name: Verify header-only build with wasi-sdk
+        run: |
+          /opt/wasi-sdk/bin/clang++ --target=wasm32-wasip2 -std=c++23 -fno-exceptions -I include -c test/mock_test_wasi.cpp -o /tmp/mock_test_wasi_wasm.o
+          file /tmp/mock_test_wasi_wasm.o | grep -q WebAssembly

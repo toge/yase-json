@@ -2,16 +2,17 @@
 
 #include <cassert>
 #include <cstdint>
+#include <expected>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <glaze/glaze.hpp>
 
-#include "yase-json/config.hpp"
 #include "yase-json/compress.hpp"
 #include "yase-json/crush.hpp"
 #include "yase-json/decompress.hpp"
+#include "yase-json/detail/error.hpp"
 
 namespace yase_json {
 
@@ -29,12 +30,12 @@ struct FixedString {
  *
  * 初回呼び出し時にスキーマ（キー→valuesテーブルインデックス）を学習し、
  * 2回目以降はスキーマ解決コストをスキップして compress を行う。
- * 出力は Decompressor::decompress() で復元できる compress-json 互換形式。
+ * 出力は try_decompress() で復元できる compress-json 互換形式。
  */
 class FastCompressor {
 public:
   /** @brief 圧縮する。初回呼び出し時にスキーマを学習する。 */
-  auto compress(std::string_view json_str) -> std::string;
+  auto try_compress(std::string_view json_str) -> detail::result<std::string>;
 
   /** @brief キャッシュをリセットする（キー集合が変わる場合に呼ぶ） */
   auto reset() noexcept -> void;
@@ -70,15 +71,15 @@ public:
 
 // --- FastCompressor 実装 ---
 
-inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
+inline auto FastCompressor::try_compress(std::string_view json_str) -> detail::result<std::string> {
   auto data = glz::generic{};
   if (auto const ec = glz::read_json(data, json_str)) {
-    YASE_JSON_THROW(std::runtime_error("Failed to parse JSON: " + glz::format_error(ec, json_str)));
+    return detail::err("Failed to parse JSON: " + glz::format_error(ec, json_str));
   }
 
-  // オブジェクト以外の入力は通常の Compressor に委譲
+  // オブジェクト以外の入力は通常の compress に委譲
   if (!data.is_object()) {
-    return Compressor{}.compress(json_str);
+    return yase_json::try_compress(json_str);
   }
 
   // フィールド選択が有効な場合、オブジェクトをフィルタリング
@@ -98,7 +99,10 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
   // 初回、またはキー集合が変化した場合
   if (!schema_cached_ || !keys_match_schema(object)) {
     reset();
-    auto const root_key = detail::unwrap(memory_.add_value(data));
+    auto const root_key = memory_.add_value(data);
+    if (!root_key) {
+      return std::unexpected(std::move(root_key).error());
+    }
 
     // スキーマ関連のエントリをキャッシュ
     cached_keys_.clear();
@@ -110,7 +114,7 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
     schema_snapshot_size_ = memory_.values.size();
     schema_cached_ = true;
 
-    return detail::unwrap(detail::write_compressed(memory_.values, root_key));
+    return detail::write_compressed(memory_.values, *root_key);
   }
 
   // 2回目以降: スキーマは固定。値部分のみをエンコード
@@ -119,7 +123,11 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
   // value_cache からスナップショット以降のエントリを除去
   auto& cache = memory_.value_cache;
   for (auto it = cache.begin(); it != cache.end();) {
-    if (detail::unwrap(detail::from_base62(it->second)) >= schema_snapshot_size_) {
+    auto const index = detail::from_base62(it->second);
+    if (!index) {
+      return std::unexpected(std::move(index).error());
+    }
+    if (*index >= schema_snapshot_size_) {
       it = cache.erase(it);
     }
     else {
@@ -136,7 +144,8 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
   // ただし不変条件として assert を追加する:
 #ifndef NDEBUG
   for (auto const& [sig, key] : memory_.schema_cache) {
-    assert(detail::unwrap(detail::from_base62(key)) < schema_snapshot_size_
+    auto const index = detail::from_base62(key);
+    assert(index && *index < schema_snapshot_size_
            && "schema_cache key out of snapshot range");
   }
 #endif
@@ -147,10 +156,14 @@ inline auto FastCompressor::compress(std::string_view json_str) -> std::string {
   for (auto const& [key, child] : object) {
     std::ignore = key;
     encoded.push_back('|');
-    encoded += detail::unwrap(memory_.add_value(child));
+    auto const value_key = memory_.add_value(child);
+    if (!value_key) {
+      return std::unexpected(std::move(value_key).error());
+    }
+    encoded += *value_key;
   }
   auto const root_key = memory_.get_value_key(std::move(encoded));
-  return detail::unwrap(detail::write_compressed(memory_.values, root_key));
+  return detail::write_compressed(memory_.values, root_key);
 }
 
 inline auto FastCompressor::reset() noexcept -> void {
@@ -182,18 +195,18 @@ inline auto FastCompressor::keys_match_schema(glz::generic::object_t const& obje
  *
  * 初回crush呼び出し時に辞書（パターン→置換文字のペアリスト）を構築し、
  * 2回目以降は辞書を再利用して O(N) で crush を行う。
- * 出力は uncrush() で復元できる JSONCrush 互換形式。
+ * 出力は try_uncrush() で復元できる JSONCrush 互換形式。
  */
 class FastCrusher {
 public:
-  /** @brief テンプレートJSONで辞書を事前構築する（任意。省略時は初回 crush() で構築） */
+  /** @brief テンプレートJSONで辞書を事前構築する（任意。省略時は初回 try_crush() で構築） */
   auto warm_up(std::string_view template_json) -> void;
 
   /** @brief crush する。warm_up() 済みか初回呼び出し後は辞書を再利用する。 */
-  auto crush(std::string_view input) -> std::string;
+  auto try_crush(std::string_view input) -> detail::result<std::string>;
 
-  /** @brief 通常の uncrush() に委譲する（互換性のためメンバ関数として提供） */
-  [[nodiscard]] auto uncrush(std::string_view input) const -> std::string;
+  /** @brief 通常の try_uncrush() に委譲する（互換性のためメンバ関数として提供） */
+  [[nodiscard]] auto try_uncrush(std::string_view input) const -> detail::result<std::string>;
 
   /** @brief 辞書キャッシュをリセットする */
   auto reset() noexcept -> void;
@@ -212,7 +225,7 @@ private:
   auto build_dictionary(std::string_view template_json) -> void;
 
   /** @brief 辞書を入力文字列に適用する */
-  [[nodiscard]] auto apply_dictionary(std::u16string string) const -> std::string;
+  [[nodiscard]] auto apply_dictionary(std::u16string string) const -> detail::result<std::string>;
 };
 
 // --- FastCrusher 実装 ---
@@ -222,12 +235,16 @@ inline auto FastCrusher::warm_up(std::string_view template_json) -> void {
   build_dictionary(template_json);
 }
 
-inline auto FastCrusher::crush(std::string_view input) -> std::string {
+inline auto FastCrusher::try_crush(std::string_view input) -> detail::result<std::string> {
   if (!dictionary_built_) {
     build_dictionary(input);
   }
 
-  auto string = detail::unwrap(detail::utf8_to_utf16(input));
+  auto string_result = detail::utf8_to_utf16(input);
+  if (!string_result) {
+    return std::unexpected(std::move(string_result).error());
+  }
+  auto string = std::move(*string_result);
   string.erase(
     std::remove(string.begin(), string.end(), detail::JSON_CRUSH_DELIMITER),
     string.end()
@@ -237,8 +254,8 @@ inline auto FastCrusher::crush(std::string_view input) -> std::string {
   return apply_dictionary(std::move(string));
 }
 
-inline auto FastCrusher::uncrush(std::string_view input) const -> std::string {
-  return yase_json::uncrush(input);
+inline auto FastCrusher::try_uncrush(std::string_view input) const -> detail::result<std::string> {
+  return yase_json::try_uncrush(input);
 }
 
 inline auto FastCrusher::reset() noexcept -> void {
@@ -247,7 +264,13 @@ inline auto FastCrusher::reset() noexcept -> void {
 }
 
 inline auto FastCrusher::build_dictionary(std::string_view template_json) -> void {
-  auto string = detail::unwrap(detail::utf8_to_utf16(template_json));
+  auto string_result = detail::utf8_to_utf16(template_json);
+  // UTF-8 変換は失敗しないはずだが、失敗時は空の辞書で続行
+  if (!string_result) {
+    dictionary_built_ = true;
+    return;
+  }
+  auto string = std::move(*string_result);
   string.erase(
     std::remove(string.begin(), string.end(), detail::JSON_CRUSH_DELIMITER),
     string.end()
@@ -263,7 +286,7 @@ inline auto FastCrusher::build_dictionary(std::string_view template_json) -> voi
   dictionary_built_ = true;
 }
 
-inline auto FastCrusher::apply_dictionary(std::u16string string) const -> std::string {
+inline auto FastCrusher::apply_dictionary(std::u16string string) const -> detail::result<std::string> {
   // split 文字列を構築（先頭に挿入する順序で作成）
   auto split_string = std::u16string{};
 
@@ -292,7 +315,7 @@ inline auto FastCrusher::apply_dictionary(std::u16string string) const -> std::s
   // 末尾に '_' を追加
   string.push_back(u'_');
 
-  return detail::unwrap(detail::utf16_to_utf8(string));
+  return detail::utf16_to_utf8(string);
 }
 
 } // namespace yase_json

@@ -1,8 +1,10 @@
 #pragma once
 
+#include <expected>
 #include <string>
 #include <string_view>
 
+#include "yase-json/detail/error.hpp"
 #include "yase-json/fast_compress.hpp"
 
 namespace yase_json {
@@ -26,16 +28,16 @@ public:
   /**
    * @brief JSON を compress して crush した文字列を返す
    * @param json_str 圧縮対象の JSON 文字列
-   * @return uncrush() → Decompressor::decompress() で復元可能な文字列
+   * @return try_uncrush() → try_decompress() で復元可能な文字列
    */
-  auto compress_crush(std::string_view json_str) -> std::string;
+  auto try_compress_crush(std::string_view json_str) -> detail::result<std::string>;
 
   /**
    * @brief compress_crush の逆変換
    * @param crushed compress_crush() の出力
    * @return 元の JSON と意味的に等価な JSON 文字列
    */
-  auto uncrush_decompress(std::string_view crushed) -> std::string;
+  auto try_uncrush_decompress(std::string_view crushed) -> detail::result<std::string>;
 
   /**
    * @brief 圧縮対象のフィールドを設定する
@@ -56,7 +58,6 @@ public:
 private:
   FastCompressor fast_compressor_{};
   FastCrusher    fast_crusher_{};
-  Decompressor   decompressor_{};
   std::size_t    warmup_threshold_{};
   std::size_t    stable_count_{};
   std::string    last_compressed_{};
@@ -74,8 +75,12 @@ public:
 
 // --- FastCompressCrusher 実装 ---
 
-inline auto FastCompressCrusher::compress_crush(std::string_view json_str) -> std::string {
-  auto const compressed = fast_compressor_.compress(json_str);
+inline auto FastCompressCrusher::try_compress_crush(std::string_view json_str) -> detail::result<std::string> {
+  auto const compressed_result = fast_compressor_.try_compress(json_str);
+  if (!compressed_result) {
+    return std::unexpected(std::move(compressed_result).error());
+  }
+  auto const& compressed = *compressed_result;
 
   if (!crusher_ready_) {
     // 出力の安定性を検出
@@ -93,16 +98,19 @@ inline auto FastCompressCrusher::compress_crush(std::string_view json_str) -> st
       crusher_ready_ = true;
     }
     else {
-      return yase_json::crush(compressed);
+      return yase_json::try_crush(compressed);
     }
   }
 
-  return fast_crusher_.crush(compressed);
+  return fast_crusher_.try_crush(compressed);
 }
 
-inline auto FastCompressCrusher::uncrush_decompress(std::string_view crushed) -> std::string {
-  auto const uncrushed = yase_json::uncrush(crushed);
-  return decompressor_.decompress(uncrushed);
+inline auto FastCompressCrusher::try_uncrush_decompress(std::string_view crushed) -> detail::result<std::string> {
+  auto const uncrushed_result = yase_json::try_uncrush(crushed);
+  if (!uncrushed_result) {
+    return std::unexpected(std::move(uncrushed_result).error());
+  }
+  return yase_json::try_decompress(*uncrushed_result);
 }
 
 inline auto FastCompressCrusher::reset() noexcept -> void {

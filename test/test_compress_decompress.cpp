@@ -8,19 +8,22 @@ TEST_CASE("Base62 encoding/decoding", "[base62]") {
   SECTION("Encode/Decode symmetry") {
     for (uint64_t i = 0; i < 1000; ++i) {
       auto encoded = yase_json::detail::to_base62(i);
-      auto decoded = yase_json::detail::unwrap(yase_json::detail::from_base62(encoded));
-      REQUIRE(i == decoded);
+      auto decoded_result = yase_json::detail::from_base62(encoded);
+      REQUIRE(decoded_result);
+      REQUIRE(i == *decoded_result);
     }
   }
 }
 
 TEST_CASE("Compressor and Decompressor symmetry", "[compression]") {
-  yase_json::Compressor compressor;
-  yase_json::Decompressor decompressor;
-
   auto test_symmetry = [&](std::string_view json_str) {
-    auto compressed = compressor.compress(json_str);
-    auto decompressed = decompressor.decompress(compressed);
+    auto compressed_result = yase_json::try_compress(json_str);
+    REQUIRE(compressed_result);
+    auto const& compressed = *compressed_result;
+
+    auto decompressed_result = yase_json::try_decompress(compressed);
+    REQUIRE(decompressed_result);
+    auto const& decompressed = *decompressed_result;
 
     glz::generic original_parsed, decompressed_parsed;
     auto ec_read_orig = glz::read_json(original_parsed, json_str);
@@ -65,13 +68,17 @@ TEST_CASE("Compressor and Decompressor symmetry", "[compression]") {
       {"name": "item", "val": 1.0}
     ])";
 
-    auto compressed = compressor.compress(redundant_str);
+    auto compressed_result = yase_json::try_compress(redundant_str);
+    REQUIRE(compressed_result);
+    auto const& compressed = *compressed_result;
 
     glz::generic compressed_parsed;
     auto ec_read_compressed = glz::read_json(compressed_parsed, compressed);
     REQUIRE(ec_read_compressed == 0);
 
-    auto decompressed = decompressor.decompress(compressed);
+    auto decompressed_result = yase_json::try_decompress(compressed);
+    REQUIRE(decompressed_result);
+    auto const& decompressed = *decompressed_result;
 
     glz::generic original_parsed, decompressed_parsed;
     auto ec_read_orig_redundant = glz::read_json(original_parsed, redundant_str);
@@ -79,20 +86,13 @@ TEST_CASE("Compressor and Decompressor symmetry", "[compression]") {
     auto ec_read_decomp_redundant = glz::read_json(decompressed_parsed, decompressed);
     REQUIRE(ec_read_decomp_redundant == 0);
     std::string original_out, decompressed_out;
-    if (auto const ec = glz::write_json(original_parsed, original_out)) {
-      throw std::runtime_error("Failed to write original JSON");
-    }
-    if (auto const ec = glz::write_json(decompressed_parsed, decompressed_out)) {
-      throw std::runtime_error("Failed to write decompressed JSON");
-    }
+    REQUIRE(glz::write_json(original_parsed, original_out) == 0);
+    REQUIRE(glz::write_json(decompressed_parsed, decompressed_out) == 0);
     REQUIRE(original_out == decompressed_out);
   }
 }
 
 TEST_CASE("Compressor matches compress-json format", "[compression][compatibility]") {
-  yase_json::Compressor compressor;
-  yase_json::Decompressor decompressor;
-
   auto constexpr sample_json = R"({
   "key_0": 83.65503238356673,
   "key_1": 89.95409841521338,
@@ -109,11 +109,15 @@ TEST_CASE("Compressor matches compress-json format", "[compression][compatibilit
   auto constexpr expected_compressed = R"([["key_0","key_1","key_2","key_3","key_4","key_5","key_6","key_7","key_8","key_9","a|0|1|2|3|4|5|6|7|8|9","n|1L.Ah7S1YY0","n|1R.NelL46Sh","n|l.QkCCYIhk","n|1W.OrxaDYwo","n|0.:4doudMnW31","n|16.6xcghesU","n|E.1lh6nCSTS","n|V.FiSW6K6e","n|e.1sDjrK3D9","n|4.FJsCQPj","o|A|B|C|D|E|F|G|H|I|J|K"],"L"])";
 
   SECTION("compress uses the same encoded payload as compress-json") {
-    REQUIRE(compressor.compress(sample_json) == expected_compressed);
+    auto result = yase_json::try_compress(sample_json);
+    REQUIRE(result);
+    REQUIRE(*result == expected_compressed);
   }
 
   SECTION("decompress accepts compress-json encoded payloads") {
-    auto const decompressed = decompressor.decompress(expected_compressed);
+    auto decompressed_result = yase_json::try_decompress(expected_compressed);
+    REQUIRE(decompressed_result);
+    auto const& decompressed = *decompressed_result;
 
     glz::generic original_parsed, decompressed_parsed;
     REQUIRE(glz::read_json(original_parsed, sample_json) == 0);
@@ -128,14 +132,17 @@ TEST_CASE("Compressor matches compress-json format", "[compression][compatibilit
 }
 
 TEST_CASE("Strings with special prefix survive round-trip (Bug A regression)", "[compression][regression]") {
-  yase_json::Compressor compressor;
-  yase_json::Decompressor decompressor;
-
   auto test_string_value = [&](std::string_view payload) {
     // payload is a JSON string value that looks like internal encoding
     auto json = std::string{"\""} + std::string{payload} + "\"";
-    auto compressed = compressor.compress(json);
-    auto decompressed = decompressor.decompress(compressed);
+    auto compressed_result = yase_json::try_compress(json);
+    REQUIRE(compressed_result);
+    auto const& compressed = *compressed_result;
+
+    auto decompressed_result = yase_json::try_decompress(compressed);
+    REQUIRE(decompressed_result);
+    auto const& decompressed = *decompressed_result;
+
     glz::generic orig, decomp;
     REQUIRE(glz::read_json(orig, json) == 0);
     REQUIRE(glz::read_json(decomp, decompressed) == 0);
@@ -163,8 +170,14 @@ TEST_CASE("Strings with special prefix survive round-trip (Bug A regression)", "
 
   SECTION("object containing N| string values") {
     auto json = R"({"k":"N|+","k2":"N|x"})";
-    auto compressed = compressor.compress(json);
-    auto decompressed = decompressor.decompress(compressed);
+    auto compressed_result = yase_json::try_compress(json);
+    REQUIRE(compressed_result);
+    auto const& compressed = *compressed_result;
+
+    auto decompressed_result = yase_json::try_decompress(compressed);
+    REQUIRE(decompressed_result);
+    auto const& decompressed = *decompressed_result;
+
     glz::generic o, d;
     REQUIRE(glz::read_json(o, json) == 0);
     REQUIRE(glz::read_json(d, decompressed) == 0);
@@ -176,8 +189,14 @@ TEST_CASE("Strings with special prefix survive round-trip (Bug A regression)", "
 
   SECTION("free function API round-trip") {
     auto json = R"({"x":"N|+"})";
-    auto compressed = yase_json::compress(json);
-    auto decompressed = yase_json::decompress(compressed);
+    auto compressed_result = yase_json::try_compress(json);
+    REQUIRE(compressed_result);
+    auto const& compressed = *compressed_result;
+
+    auto decompressed_result = yase_json::try_decompress(compressed);
+    REQUIRE(decompressed_result);
+    auto const& decompressed = *decompressed_result;
+
     glz::generic o, d;
     REQUIRE(glz::read_json(o, json) == 0);
     REQUIRE(glz::read_json(d, decompressed) == 0);

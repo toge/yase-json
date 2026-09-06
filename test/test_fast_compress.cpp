@@ -23,84 +23,100 @@ auto verify_json_equal(std::string_view original, std::string_view result) -> vo
 
 TEST_CASE("FastCompressor の基本動作", "[fast_compress]") {
   yase_json::FastCompressor compressor;
-  yase_json::Decompressor decompressor;
 
-  SECTION("初回 compress は Decompressor で復元できる") {
+  SECTION("初回 try_compress は try_decompress で復元できる") {
     auto const input = R"({"key_0":1.0,"key_1":2.0,"key_2":3.0})";
-    auto const compressed = compressor.compress(input);
-    auto const decompressed = decompressor.decompress(compressed);
-    verify_json_equal(input, decompressed);
+    auto compressed_result = compressor.try_compress(input);
+    REQUIRE(compressed_result);
+    auto const& compressed = *compressed_result;
+
+    auto decompressed_result = yase_json::try_decompress(compressed);
+    REQUIRE(decompressed_result);
+    verify_json_equal(input, *decompressed_result);
   }
 
-  SECTION("2回目以降も Decompressor で復元できる") {
+  SECTION("2回目以降も try_decompress で復元できる") {
     auto const input1 = R"({"key_0":10.0,"key_1":20.0,"key_2":30.0})";
     auto const input2 = R"({"key_0":100.0,"key_1":200.0,"key_2":300.0})";
     auto const input3 = R"({"key_0":1000.0,"key_1":2000.0,"key_2":3000.0})";
 
-    auto const compressed1 = compressor.compress(input1);
-    auto const compressed2 = compressor.compress(input2);
-    auto const compressed3 = compressor.compress(input3);
+    auto compressed1_result = compressor.try_compress(input1);
+    auto compressed2_result = compressor.try_compress(input2);
+    auto compressed3_result = compressor.try_compress(input3);
+    REQUIRE(compressed1_result);
+    REQUIRE(compressed2_result);
+    REQUIRE(compressed3_result);
 
-    verify_json_equal(input1, decompressor.decompress(compressed1));
-    verify_json_equal(input2, decompressor.decompress(compressed2));
-    verify_json_equal(input3, decompressor.decompress(compressed3));
+    verify_json_equal(input1, *yase_json::try_decompress(*compressed1_result));
+    verify_json_equal(input2, *yase_json::try_decompress(*compressed2_result));
+    verify_json_equal(input3, *yase_json::try_decompress(*compressed3_result));
   }
 
   SECTION("キー集合変化後も正常に動作する") {
     auto const input_a = R"({"a":1.0,"b":2.0})";
-    auto const compressed_a = compressor.compress(input_a);
-    verify_json_equal(input_a, decompressor.decompress(compressed_a));
+    auto compressed_a_result = compressor.try_compress(input_a);
+    REQUIRE(compressed_a_result);
+    verify_json_equal(input_a, *yase_json::try_decompress(*compressed_a_result));
 
     compressor.reset();
 
     auto const input_x = R"({"x":9.0,"y":8.0})";
-    auto const compressed_x = compressor.compress(input_x);
-    verify_json_equal(input_x, decompressor.decompress(compressed_x));
+    auto compressed_x_result = compressor.try_compress(input_x);
+    REQUIRE(compressed_x_result);
+    verify_json_equal(input_x, *yase_json::try_decompress(*compressed_x_result));
   }
 
   SECTION("オブジェクト以外の入力はフォールバックする") {
     auto const input = R"([1,2,3])";
-    auto const fast_compressed = compressor.compress(input);
+    auto fast_compressed_result = compressor.try_compress(input);
+    REQUIRE(fast_compressed_result);
+    auto const& fast_compressed = *fast_compressed_result;
 
-    yase_json::Compressor normal_compressor;
-    auto const normal_compressed = normal_compressor.compress(input);
+    auto normal_compressed_result = yase_json::try_compress(input);
+    REQUIRE(normal_compressed_result);
 
-    // 通常の Compressor と同一出力になること
-    REQUIRE(fast_compressed == normal_compressed);
+    // 通常の try_compress と同一出力になること
+    REQUIRE(fast_compressed == *normal_compressed_result);
 
     // 復元確認
-    verify_json_equal(input, decompressor.decompress(fast_compressed));
+    verify_json_equal(input, *yase_json::try_decompress(fast_compressed));
   }
 
   SECTION("スキーマが固定されている場合、2回目以降の出力が安定する") {
     auto const input = R"({"key_0":42.0,"key_1":99.0})";
-    auto const compressed1 = compressor.compress(input);
-    auto const compressed2 = compressor.compress(input);
-    REQUIRE(compressed1 == compressed2);
+    auto compressed1_result = compressor.try_compress(input);
+    auto compressed2_result = compressor.try_compress(input);
+    REQUIRE(compressed1_result);
+    REQUIRE(compressed2_result);
+    REQUIRE(*compressed1_result == *compressed2_result);
   }
 }
 
 TEST_CASE("FastCrusher の基本動作", "[fast_crush]") {
   yase_json::FastCrusher crusher;
 
-  SECTION("warm_up 後の crush が uncrush で復元できる") {
+  SECTION("warm_up 後の try_crush が try_uncrush で復元できる") {
     auto const template_json = R"({"key_0":1.0,"key_1":"hello"})";
     crusher.warm_up(template_json);
 
     auto const input = R"({"key_0":9.9,"key_1":"world"})";
-    auto const crushed = crusher.crush(input);
-    auto const uncrushed = crusher.uncrush(crushed);
-    verify_json_equal(input, uncrushed);
+    auto crushed_result = crusher.try_crush(input);
+    REQUIRE(crushed_result);
+    auto uncrushed_result = crusher.try_uncrush(*crushed_result);
+    REQUIRE(uncrushed_result);
+    verify_json_equal(input, *uncrushed_result);
   }
 
-  SECTION("warm_up なしの初回 crush が uncrush で復元できる") {
+  SECTION("warm_up なしの初回 try_crush が try_uncrush で復元できる") {
     auto const input = R"({"key_0":1.0,"key_1":2.0})";
-    auto const crushed = crusher.crush(input);
-    auto const uncrushed = crusher.uncrush(crushed);
-    verify_json_equal(input, uncrushed);
+    auto crushed_result = crusher.try_crush(input);
+    REQUIRE(crushed_result);
+    auto uncrushed_result = crusher.try_uncrush(*crushed_result);
+    REQUIRE(uncrushed_result);
+    verify_json_equal(input, *uncrushed_result);
   }
 
-  SECTION("warm_up 後の複数回 crush が各回 uncrush で復元できる") {
+  SECTION("warm_up 後の複数回 try_crush が各回 try_uncrush で復元できる") {
     auto const template_json = R"({"key_0":1.0,"key_1":2.0,"key_2":3.0})";
     crusher.warm_up(template_json);
 
@@ -108,34 +124,42 @@ TEST_CASE("FastCrusher の基本動作", "[fast_crush]") {
     auto const input2 = R"({"key_0":100.0,"key_1":200.0,"key_2":300.0})";
     auto const input3 = R"({"key_0":1000.0,"key_1":2000.0,"key_2":3000.0})";
 
-    auto const crushed1 = crusher.crush(input1);
-    auto const crushed2 = crusher.crush(input2);
-    auto const crushed3 = crusher.crush(input3);
+    auto crushed1_result = crusher.try_crush(input1);
+    auto crushed2_result = crusher.try_crush(input2);
+    auto crushed3_result = crusher.try_crush(input3);
+    REQUIRE(crushed1_result);
+    REQUIRE(crushed2_result);
+    REQUIRE(crushed3_result);
 
-    verify_json_equal(input1, crusher.uncrush(crushed1));
-    verify_json_equal(input2, crusher.uncrush(crushed2));
-    verify_json_equal(input3, crusher.uncrush(crushed3));
+    verify_json_equal(input1, *crusher.try_uncrush(*crushed1_result));
+    verify_json_equal(input2, *crusher.try_uncrush(*crushed2_result));
+    verify_json_equal(input3, *crusher.try_uncrush(*crushed3_result));
   }
 
-  SECTION("メンバ uncrush() が yase_json::uncrush() と同一結果を返す") {
+  SECTION("メンバ try_uncrush() が yase_json::try_uncrush() と同一結果を返す") {
     auto const input = R"({"key_0":1.0,"key_1":"hello"})";
-    auto const crushed = crusher.crush(input);
+    auto crushed_result = crusher.try_crush(input);
+    REQUIRE(crushed_result);
 
-    auto const result_member = crusher.uncrush(crushed);
-    auto const result_free = yase_json::uncrush(crushed);
-    REQUIRE(result_member == result_free);
+    auto const result_member = crusher.try_uncrush(*crushed_result);
+    auto const result_free = yase_json::try_uncrush(*crushed_result);
+    REQUIRE(result_member);
+    REQUIRE(result_free);
+    REQUIRE(*result_member == *result_free);
   }
 
   SECTION("reset() 後に再 warm_up して正常動作する") {
     crusher.warm_up(R"({"a":1.0,"b":2.0})");
-    auto const crushed1 = crusher.crush(R"({"a":10.0,"b":20.0})");
-    verify_json_equal(R"({"a":10.0,"b":20.0})", crusher.uncrush(crushed1));
+    auto crushed1_result = crusher.try_crush(R"({"a":10.0,"b":20.0})");
+    REQUIRE(crushed1_result);
+    verify_json_equal(R"({"a":10.0,"b":20.0})", *crusher.try_uncrush(*crushed1_result));
 
     crusher.reset();
 
     crusher.warm_up(R"({"x":1.0,"y":2.0})");
-    auto const crushed2 = crusher.crush(R"({"x":90.0,"y":80.0})");
-    verify_json_equal(R"({"x":90.0,"y":80.0})", crusher.uncrush(crushed2));
+    auto crushed2_result = crusher.try_crush(R"({"x":90.0,"y":80.0})");
+    REQUIRE(crushed2_result);
+    verify_json_equal(R"({"x":90.0,"y":80.0})", *crusher.try_uncrush(*crushed2_result));
   }
 }
 
@@ -155,37 +179,45 @@ TEST_CASE("FastCrusher dictionary collision handling (Bug B regression)", "[fast
       many_chars.push_back(static_cast<char>(c));
     }
     many_chars += "\"}";
-    auto const crushed = crusher.crush(many_chars);
-    auto const uncrushed = yase_json::uncrush(crushed);
-    verify_json_equal(many_chars, uncrushed);
-    // crusher.uncrush も同一
-    verify_json_equal(many_chars, crusher.uncrush(crushed));
+    auto crushed_result = crusher.try_crush(many_chars);
+    REQUIRE(crushed_result);
+    auto uncrushed_result = yase_json::try_uncrush(*crushed_result);
+    REQUIRE(uncrushed_result);
+    verify_json_equal(many_chars, *uncrushed_result);
+    // crusher.try_uncrush も同一
+    auto member_result = crusher.try_uncrush(*crushed_result);
+    REQUIRE(member_result);
+    verify_json_equal(many_chars, *member_result);
   }
 
   SECTION("ASCIIのみの入力では従来通り圧縮・復元できる") {
     crusher.warm_up(R"({"a":1.0,"b":2.0})");
     auto const input = R"({"a":10.0,"b":20.0})";
-    auto const crushed = crusher.crush(input);
-    verify_json_equal(input, yase_json::uncrush(crushed));
-    verify_json_equal(input, crusher.uncrush(crushed));
+    auto crushed_result = crusher.try_crush(input);
+    REQUIRE(crushed_result);
+    verify_json_equal(input, *yase_json::try_uncrush(*crushed_result));
+    auto member_result = crusher.try_uncrush(*crushed_result);
+    REQUIRE(member_result);
+    verify_json_equal(input, *member_result);
   }
 }
 
 TEST_CASE("FastCompressor schema_cache 整合性", "[fast_compress]") {
   yase_json::FastCompressor compressor;
-  yase_json::Decompressor decompressor;
 
   SECTION("異なるキー集合を reset 後に再圧縮しても正しく復元できる") {
     for (auto i = 0; i < 3; ++i) {
       auto const input = R"({"a":1.0,"b":2.0,"c":3.0})";
-      auto const compressed = compressor.compress(input);
-      verify_json_equal(input, decompressor.decompress(compressed));
+      auto compressed_result = compressor.try_compress(input);
+      REQUIRE(compressed_result);
+      verify_json_equal(input, *yase_json::try_decompress(*compressed_result));
     }
     compressor.reset();
     for (auto i = 0; i < 3; ++i) {
       auto const input = R"({"x":9.0,"y":8.0,"z":7.0})";
-      auto const compressed = compressor.compress(input);
-      verify_json_equal(input, decompressor.decompress(compressed));
+      auto compressed_result = compressor.try_compress(input);
+      REQUIRE(compressed_result);
+      verify_json_equal(input, *yase_json::try_decompress(*compressed_result));
     }
   }
 }

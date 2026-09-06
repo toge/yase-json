@@ -71,7 +71,7 @@ inline auto from_base62(std::string_view encoded) -> result<uint64_t> {
   auto value = uint64_t{0};
   for (auto const ch : encoded) {
     if (!valid_table[static_cast<uint8_t>(ch)]) {
-      return err("Invalid base62 character: " + std::string{ch}, error::kind_t::invalid_argument);
+      return err("Invalid base62 character: " + std::string{ch});
     }
     value = value * 62 + decode_table[static_cast<uint8_t>(ch)];
   }

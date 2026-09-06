@@ -529,36 +529,4 @@ inline auto try_uncrush(std::string_view input) -> detail::result<std::string> {
   return detail::utf16_to_utf8(detail::json_crush_swap(uncrushed, false));
 }
 
-inline auto crush(std::string_view input) -> std::string {
-  return detail::unwrap(try_crush(input));
-}
-
-inline auto uncrush(std::string_view input) -> std::string {
-  return detail::unwrap(try_uncrush(input));
-}
-
-inline auto crush(std::string_view input, std::string& out) -> std::size_t {
-  auto const result = crush(input);
-  out.append(result);
-  return result.size();
-}
-
-inline auto uncrush(std::string_view input, std::string& out) -> std::size_t {
-  auto const result = uncrush(input);
-  out.append(result);
-  return result.size();
-}
-
-template <std::output_iterator<char> OutputIt>
-inline auto crush(std::string_view input, OutputIt out) -> OutputIt {
-  auto const result = crush(input);
-  return std::copy(result.begin(), result.end(), out);
-}
-
-template <std::output_iterator<char> OutputIt>
-inline auto uncrush(std::string_view input, OutputIt out) -> OutputIt {
-  auto const result = uncrush(input);
-  return std::copy(result.begin(), result.end(), out);
-}
-
 } // namespace yase_json

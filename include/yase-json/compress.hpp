@@ -7,7 +7,6 @@
 
 #include <glaze/glaze.hpp>
 
-#include "yase-json/config.hpp"
 #include "yase-json/detail/compress_json_compat.hpp"
 #include "yase-json/detail/error.hpp"
 
@@ -25,21 +24,6 @@ inline auto try_compress(std::string_view json_str) -> detail::result<std::strin
     return std::unexpected(std::move(root_key).error());
   }
   return detail::write_compressed(memory.values, *root_key);
-}
-
-class Compressor {
-public:
-  auto compress(std::string_view json_str) -> std::string {
-    auto result = try_compress(json_str);
-    if (!result) {
-      detail::throw_error(result.error());
-    }
-    return std::move(*result);
-  }
-};
-
-[[nodiscard]] inline auto compress(std::string_view json_str) -> std::string {
-  return Compressor{}.compress(json_str);
 }
 
 } // namespace yase_json

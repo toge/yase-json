@@ -37,18 +37,22 @@ TEST_CASE("Property: random JSON round-trips via compress/decompress", "[propert
   };
 
   for (auto const& sample : samples) {
-    auto const compressed = yase_json::compress(sample);
-    auto const decompressed = yase_json::decompress(compressed);
+    auto compressed_result = yase_json::try_compress(sample);
+    REQUIRE(compressed_result);
+    auto decompressed_result = yase_json::try_decompress(*compressed_result);
+    REQUIRE(decompressed_result);
     INFO("sample: " << sample);
-    REQUIRE(json_equal(sample, decompressed));
+    REQUIRE(json_equal(sample, *decompressed_result));
   }
 
   SECTION("pipeline round-trip") {
     for (auto const& sample : samples) {
-      auto const crushed = yase_json::pipeline::compress_and_crush(sample);
-      auto const restored = yase_json::pipeline::uncrush_and_decompress(crushed);
+      auto crushed_result = yase_json::pipeline::try_compress_and_crush(sample);
+      REQUIRE(crushed_result);
+      auto restored_result = yase_json::pipeline::try_uncrush_and_decompress(*crushed_result);
+      REQUIRE(restored_result);
       INFO("sample: " << sample);
-      REQUIRE(json_equal(sample, restored));
+      REQUIRE(json_equal(sample, *restored_result));
     }
   }
 }
@@ -64,10 +68,12 @@ TEST_CASE("Property: crush/uncrush is identity", "[property][crush]") {
   };
 
   for (auto const& s : samples) {
-    auto const crushed = yase_json::crush(s);
-    auto const uncrushed = yase_json::uncrush(crushed);
+    auto crushed_result = yase_json::try_crush(s);
+    REQUIRE(crushed_result);
+    auto uncrushed_result = yase_json::try_uncrush(*crushed_result);
+    REQUIRE(uncrushed_result);
     INFO("sample size: " << s.size());
-    REQUIRE(uncrushed == s);
+    REQUIRE(*uncrushed_result == s);
   }
 }
 
@@ -82,9 +88,11 @@ TEST_CASE("Property: FastCrusher round-trip after warm_up with varied inputs", "
   };
 
   for (auto const& input : inputs) {
-    auto const crushed = crusher.crush(input);
-    auto const uncrushed = yase_json::uncrush(crushed);
+    auto crushed_result = crusher.try_crush(input);
+    REQUIRE(crushed_result);
+    auto uncrushed_result = yase_json::try_uncrush(*crushed_result);
+    REQUIRE(uncrushed_result);
     INFO("input: " << input.substr(0, 40));
-    REQUIRE(json_equal(input, uncrushed));
+    REQUIRE(json_equal(input, *uncrushed_result));
   }
 }

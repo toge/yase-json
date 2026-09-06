@@ -21,7 +21,7 @@ int main() {
 }
 )";
 
-  // try_* は hosted / WASI minimal どちらでも利用可能
+  // try_* APIs are always available (exception-free)
   auto compressed_res = yase_json::try_compress(json_str);
   if (!compressed_res) {
     std::cerr << "compress failed: " << compressed_res.error().message << '\n';

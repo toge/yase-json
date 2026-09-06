@@ -8,7 +8,6 @@
 
 #include <glaze/glaze.hpp>
 
-#include "yase-json/config.hpp"
 #include "yase-json/detail/compress_json_compat.hpp"
 #include "yase-json/detail/error.hpp"
 
@@ -130,7 +129,7 @@ inline auto decode(std::string_view key, glz::generic::array_t const& values, si
     return std::unexpected(std::move(index).error());
   }
   if (*index >= values.size()) {
-    return err("Value key out of range", error::kind_t::out_of_range);
+    return err("Value key out of range");
   }
 
   auto const& encoded_node = values[*index];
@@ -197,22 +196,6 @@ inline auto try_decompress(std::string_view compressed_json_str) -> detail::resu
     return detail::err("Failed to generate decompressed JSON");
   }
   return out;
-}
-
-class Decompressor {
-public:
-  auto decompress(std::string_view compressed_json_str) -> std::string {
-    auto result = try_decompress(compressed_json_str);
-    if (!result) {
-      detail::throw_error(result.error());
-    }
-    return std::move(*result);
-  }
-};
-
-// 自由関数版 — クラスと等価だが状態を持たない
-[[nodiscard]] inline auto decompress(std::string_view compressed_json_str) -> std::string {
-  return Decompressor{}.decompress(compressed_json_str);
 }
 
 } // namespace yase_json
