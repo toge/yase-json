@@ -8,7 +8,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "WASI" OR CMAKE_SYSTEM_NAME STREQUAL "Wasi" OR DEF
     # Emscripten は -sDISABLE_EXCEPTION_CATCHING=0 で例外を有効化するため -fno-exceptions と衝突する
     target_compile_options(mock_test_wasi PRIVATE
         $<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<NOT:$<BOOL:${EMSCRIPTEN}>>>:-fno-exceptions>)
-    add_test(NAME mock_test_wasi COMMAND mock_test_wasi)
+    add_test(NAME mock_test_wasi COMMAND wasmtime run $<TARGET_FILE:mock_test_wasi>)
 else()
     # Hosted target: build Catch2 tests
     find_package(Catch2 REQUIRED CONFIG)
