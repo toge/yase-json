@@ -46,7 +46,7 @@ inline auto constexpr valid_table = [] {
   return table;
 }();
 
-inline auto strip_leading_zeroes(std::string_view digits) -> std::string_view {
+inline auto strip_leading_zeroes(std::string_view digits) noexcept -> std::string_view {
   while (digits.size() > 1 && digits.front() == '0') {
     digits.remove_prefix(1);
   }
@@ -78,7 +78,7 @@ inline auto from_base62(std::string_view encoded) -> result<uint64_t> {
   return value;
 }
 
-inline auto parse_u64_digits(std::string_view digits) -> uint64_t {
+inline auto parse_u64_digits(std::string_view digits) noexcept -> uint64_t {
   auto value = uint64_t{0};
   for (auto const ch : digits) {
     value = value * 10 + static_cast<uint64_t>(ch - '0');
@@ -110,7 +110,7 @@ inline auto split_preserving_empty(std::string_view value) -> std::vector<std::s
   return parts;
 }
 
-inline auto is_safe_integer_string(std::string_view digits) -> bool {
+inline auto is_safe_integer_string(std::string_view digits) noexcept -> bool {
   digits = strip_leading_zeroes(digits);
   if (digits.size() != MAX_SAFE_INTEGER.size()) {
     return digits.size() < MAX_SAFE_INTEGER.size();
@@ -151,7 +151,7 @@ inline auto decimal_to_base62(std::string_view digits) -> std::string {
   return encoded;
 }
 
-inline auto multiply_decimal(std::string& digits, uint32_t factor) -> void {
+inline auto multiply_decimal(std::string& digits, uint32_t const factor) -> void {
   auto carry = uint32_t{0};
   for (auto const index : std::views::reverse(std::views::iota(size_t{0}, digits.size()))) {
     auto const value = static_cast<uint32_t>(digits[index] - '0') * factor + carry;
@@ -169,7 +169,7 @@ inline auto multiply_decimal(std::string& digits, uint32_t factor) -> void {
   }
 }
 
-inline auto add_decimal(std::string& digits, uint32_t addend) -> void {
+inline auto add_decimal(std::string& digits, uint32_t const addend) -> void {
   auto carry = addend;
   for (auto const index : std::views::reverse(std::views::iota(size_t{0}, digits.size()))) {
     if (carry == 0) {
@@ -242,7 +242,7 @@ inline auto reverse_string(std::string_view value) -> std::string {
   return reversed;
 }
 
-inline auto number_to_json_string(double value) -> result<std::string> {
+inline auto number_to_json_string(double const value) -> result<std::string> {
   if (value == 0.0) {
     return std::string{"0"};
   }
@@ -260,7 +260,7 @@ inline auto number_to_json_string(double value) -> result<std::string> {
   return out;
 }
 
-inline auto num_to_s(double value) -> result<std::string> {
+inline auto num_to_s(double const value) -> result<std::string> {
   if (value < 0) {
     return num_to_s(-value).transform([](std::string const& s) { return "-" + s; });
   }
@@ -328,7 +328,7 @@ inline auto s_to_num(std::string_view encoded) -> result<double> {
   return parse_number(number);
 }
 
-inline auto encode_number(double value) -> result<std::string> {
+inline auto encode_number(double const value) -> result<std::string> {
   if (value == std::numeric_limits<double>::infinity()) {
     return std::string{"N|+"};
   }
@@ -386,7 +386,7 @@ struct CompressionMemory {
     return schema_key;
   }
 
-  auto add_value(glz::generic const& value, bool array_element = false, size_t depth = 0) -> result<std::string> {
+  auto add_value(glz::generic const& value, bool const array_element = false, size_t const depth = 0) -> result<std::string> {
     if (depth > kMaxDepth) {
       return err("Compression depth limit exceeded");
     }

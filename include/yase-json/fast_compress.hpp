@@ -19,10 +19,10 @@ namespace yase_json {
 template<size_t N>
 struct FixedString {
   char buf[N];
-  constexpr FixedString(char const (&s)[N]) {
+  constexpr FixedString(char const (&s)[N]) noexcept {
     for (size_t i = 0; i < N; ++i) buf[i] = s[i];
   }
-  constexpr operator std::string_view() const { return {buf, N - 1}; }
+  constexpr operator std::string_view() const noexcept { return {buf, N - 1}; }
 };
 
 /**

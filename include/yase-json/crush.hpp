@@ -36,15 +36,15 @@ struct OrderedCandidate {
   int64_t encoded_length = 0;
 };
 
-auto constexpr is_high_surrogate = [](char16_t const value) {
+auto constexpr is_high_surrogate = [](char16_t const value) noexcept {
   return value >= 0xD800 && value <= 0xDBFF;
 };
 
-auto constexpr is_low_surrogate = [](char16_t const value) {
+auto constexpr is_low_surrogate = [](char16_t const value) noexcept {
   return value >= 0xDC00 && value <= 0xDFFF;
 };
 
-auto constexpr is_uri_unescaped = [](char32_t const value) {
+auto constexpr is_uri_unescaped = [](char32_t const value) noexcept {
   return (value >= U'0' && value <= U'9') ||
          (value >= U'A' && value <= U'Z') ||
          (value >= U'a' && value <= U'z') ||
@@ -53,7 +53,7 @@ auto constexpr is_uri_unescaped = [](char32_t const value) {
          value == U')';
 };
 
-auto constexpr utf8_length = [](char32_t const value) -> int64_t {
+auto constexpr utf8_length = [](char32_t const value) noexcept -> int64_t {
   if (value <= 0x7F) return 1;
   if (value <= 0x7FF) return 2;
   if (value <= 0xFFFF) return 3;
@@ -161,7 +161,7 @@ auto const utf16_to_utf8 = [](std::u16string_view const input) -> result<std::st
   return output;
 };
 
-auto const encoded_uri_length = [](std::u16string_view const input) -> int64_t {
+auto const encoded_uri_length = [](std::u16string_view const input) noexcept -> int64_t {
   int64_t length = 0;
   for (size_t i = 0; i < input.size(); ++i) {
     char32_t cp = input[i];
@@ -177,7 +177,7 @@ auto const encoded_uri_length = [](std::u16string_view const input) -> int64_t {
   return length;
 };
 
-auto constexpr has_unmatched_surrogate = [](std::u16string_view const input) {
+auto constexpr has_unmatched_surrogate = [](std::u16string_view const input) noexcept {
   if (input.empty()) return false;
   return is_low_surrogate(input.front()) || is_high_surrogate(input.back());
 };
@@ -294,16 +294,16 @@ public:
       powers_[i + 1] = powers_[i] * kBase;
     }
   }
-  [[nodiscard]] auto slice(size_t const pos, size_t const length) const -> uint64_t {
+  [[nodiscard]] auto slice(size_t const pos, size_t const length) const noexcept -> uint64_t {
     return prefix_[pos + length] - prefix_[pos] * powers_[length];
   }
-  static auto hash(std::basic_string_view<CharT> const input) -> uint64_t {
+  static auto hash(std::basic_string_view<CharT> const input) noexcept -> uint64_t {
     uint64_t v = 0;
     for (auto const ch : input) v = v * kBase + code_unit(ch);
     return v;
   }
 private:
-  static auto code_unit(CharT const v) -> uint64_t {
+  static auto code_unit(CharT const v) noexcept -> uint64_t {
     return static_cast<uint64_t>(static_cast<std::make_unsigned_t<CharT>>(v)) + 1;
   }
   static constexpr auto kBase = uint64_t{11400714819323198485ull};
@@ -311,7 +311,7 @@ private:
   std::vector<uint64_t> powers_;
 };
 
-auto constexpr greedy_non_overlapping_count = [](std::vector<size_t> const& positions, size_t const length) {
+auto constexpr greedy_non_overlapping_count = [](std::vector<size_t> const& positions, size_t const length) noexcept {
   int64_t count = 0; size_t next_allowed = 0; bool first = true;
   for (auto const pos : positions) {
     if (first || pos >= next_allowed) {

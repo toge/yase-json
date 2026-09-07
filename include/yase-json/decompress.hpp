@@ -20,9 +20,9 @@ auto make_node(T&& v) -> glz::generic {
   return node;
 }
 
-inline auto decode(std::string_view key, glz::generic::array_t const& values, size_t depth) -> result<glz::generic>;
+inline auto decode(std::string_view key, glz::generic::array_t const& values, size_t const depth) -> result<glz::generic>;
 
-inline auto decode_array(std::string_view encoded, glz::generic::array_t const& values, size_t depth)
+inline auto decode_array(std::string_view encoded, glz::generic::array_t const& values, size_t const depth)
   -> result<glz::generic> {
   if (encoded == "a|") {
     return make_node(glz::generic::array_t{});
@@ -69,7 +69,7 @@ inline auto decode_special_number(std::string_view encoded) -> result<glz::gener
   }
 }
 
-inline auto decode_object(std::string_view encoded, glz::generic::array_t const& values, size_t depth)
+inline auto decode_object(std::string_view encoded, glz::generic::array_t const& values, size_t const depth)
   -> result<glz::generic> {
   if (encoded == "o|") {
     return make_node(glz::generic::object_t{});
@@ -116,7 +116,7 @@ inline auto decode_object(std::string_view encoded, glz::generic::array_t const&
   return make_node(std::move(object));
 }
 
-inline auto decode(std::string_view key, glz::generic::array_t const& values, size_t depth) -> result<glz::generic> {
+inline auto decode(std::string_view key, glz::generic::array_t const& values, size_t const depth) -> result<glz::generic> {
   if (depth > kMaxDepth) {
     return err("Decompression depth limit exceeded");
   }

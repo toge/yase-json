@@ -22,7 +22,7 @@ public:
    * @brief コンストラクタ
    * @param warmup_threshold 辞書構築を開始するまでのフォールバック回数（デフォルト: 2）
    */
-  explicit FastCompressCrusher(std::size_t warmup_threshold = 2)
+  explicit FastCompressCrusher(std::size_t const warmup_threshold = 2)
     : warmup_threshold_{warmup_threshold} {}
 
   /**
@@ -67,7 +67,7 @@ private:
 template<FixedString... Fields>
 class StaticFastCompressCrusher : public FastCompressCrusher {
 public:
-  explicit StaticFastCompressCrusher(std::size_t warmup_threshold = 2)
+  explicit StaticFastCompressCrusher(std::size_t const warmup_threshold = 2)
     : FastCompressCrusher(warmup_threshold) {
     set_fields({std::string(Fields)...});
   }
